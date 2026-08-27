@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type FocusEvent, type KeyboardEvent, type ReactElement } from 'react'
+import { IconCheckOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitBranchListResult, GitBranchResult, GitBranchStatusResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './GitBranchPicker.module.css'
@@ -195,50 +196,52 @@ export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | nul
       </button>
       {open && (
         <div className={css.menu}>
-          <div className={css.menuHead}>Local branches</div>
-          {list === null
-            ? <div className={css.empty}>Loading…</div>
-            : list.branches.length === 0
-              ? <div className={css.empty}>No local branches</div>
-              : (
-                <ul className={css.list} aria-label="Local branches">
-                  {list.branches.map(name => (
-                    <li key={name}>
-                      <button
-                        type="button"
-                        className={name === currentBranch ? `${css.row} ${css.rowCurrent}` : css.row}
-                        title={name === currentBranch ? `Current: ${name}` : `Switch to ${name}`}
-                        disabled={busy !== null || name === currentBranch}
-                        onClick={() => { void onCheckout(name) }}
-                      >
-                        <span className={css.check} aria-hidden="true">
-                          {name === currentBranch ? '✓' : ''}
-                        </span>
-                        <span className={css.rowName}>{name}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-          <div className={css.base}>Base: {currentBranch}</div>
-          <form className={css.form} onSubmit={(event) => { void onCreate(event) }}>
-            <input
-              className={css.input}
-              value={draft}
-              placeholder="New branch name"
-              aria-label="New branch name"
-              disabled={busy !== null}
-              onChange={(event) => { setDraft(event.target.value) }}
-            />
-            <button
-              type="submit"
-              className={css.create}
-              disabled={busy !== null || draft.trim() === ''}
-            >
-              {busy === 'create' ? 'Creating…' : 'Create'}
-            </button>
-          </form>
-          {error !== null && <div className={css.error} role="alert">{error}</div>}
+          <div className={css.viewport}>
+            <div className={css.menuHead}>Local branches</div>
+            {list === null
+              ? <div className={css.empty}>Loading…</div>
+              : list.branches.length === 0
+                ? <div className={css.empty}>No local branches</div>
+                : (
+                  <ul className={css.list} aria-label="Local branches">
+                    {list.branches.map(name => (
+                      <li key={name}>
+                        <button
+                          type="button"
+                          className={css.row}
+                          title={name === currentBranch ? `Current: ${name}` : `Switch to ${name}`}
+                          disabled={busy !== null || name === currentBranch}
+                          onClick={() => { void onCheckout(name) }}
+                        >
+                          <span className={css.rowName}>{name}</span>
+                          {name === currentBranch && <IconCheckOutline16 className={css.check} />}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+          </div>
+          <div className={css.footer}>
+            <div className={css.base}>Base: {currentBranch}</div>
+            <form className={css.form} onSubmit={(event) => { void onCreate(event) }}>
+              <input
+                className={css.input}
+                value={draft}
+                placeholder="New branch name"
+                aria-label="New branch name"
+                disabled={busy !== null}
+                onChange={(event) => { setDraft(event.target.value) }}
+              />
+              <button
+                type="submit"
+                className={css.create}
+                disabled={busy !== null || draft.trim() === ''}
+              >
+                {busy === 'create' ? 'Creating…' : 'Create'}
+              </button>
+            </form>
+            {error !== null && <div className={css.error} role="alert">{error}</div>}
+          </div>
         </div>
       )}
     </div>

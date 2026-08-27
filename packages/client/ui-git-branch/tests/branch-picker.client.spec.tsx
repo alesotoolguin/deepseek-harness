@@ -129,7 +129,7 @@ describe('GitBranchPicker', () => {
     fireEvent.click(await screen.findByLabelText('branch main'))
     await screen.findByText('release')
     expect(list).toHaveBeenCalledWith('/repo')
-    expect(screen.getByText('✓')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'main' }).disabled).toBe(true)
   })
 
   it('shows the checked-out branch as the create base', async () => {
