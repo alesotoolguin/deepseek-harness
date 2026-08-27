@@ -39,3 +39,11 @@ export interface GitBranchCheckoutRequest {
   /** Local branch name to check out. */
   readonly name: string
 }
+
+/** Pending-change count for a workspace directory. */
+export interface GitBranchStatusResult {
+  /** Directory of the repository whose status was read, or null outside any repository. */
+  readonly repo: string | null
+  /** Number of entries in `git status --porcelain` (modified, added, deleted, untracked). */
+  readonly changes: number
+}

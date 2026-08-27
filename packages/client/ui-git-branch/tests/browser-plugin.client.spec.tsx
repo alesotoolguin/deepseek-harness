@@ -10,6 +10,7 @@ afterEach(cleanup)
 
 const BRANCH = { branch: 'main', repo: '/repo' }
 const LIST = { repo: '/repo', branches: ['main'] }
+const STATUS = { repo: '/repo', changes: 2 }
 type Result<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
@@ -27,12 +28,14 @@ async function bench() {
     .mockResolvedValue({ ok: true, value: BRANCH })
   const list = vi.fn<() => Promise<Result<typeof LIST>>>()
     .mockResolvedValue({ ok: true, value: LIST })
+  const status = vi.fn<() => Promise<Result<typeof STATUS>>>()
+    .mockResolvedValue({ ok: true, value: STATUS })
   const create = vi.fn<() => Promise<Result<string>>>()
     .mockResolvedValue({ ok: true, value: 'feature-x' })
   const checkout = vi.fn<() => Promise<Result<string>>>()
     .mockResolvedValue({ ok: true, value: 'release' })
-  ctx.provide('remote.gitBranch', { branch, list, create, checkout })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, branch, list, create, checkout }
+  ctx.provide('remote.gitBranch', { branch, list, status, create, checkout })
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, branch, list, status, create, checkout }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -57,6 +60,7 @@ describe('ui-git-branch browser plugin', () => {
     expect(entry.options).toMatchObject({ id: 'git-branch-picker', order: 10 })
     expect(b.branch).not.toHaveBeenCalled()
     expect(b.list).not.toHaveBeenCalled()
+    expect(b.status).not.toHaveBeenCalled()
     expect(b.create).not.toHaveBeenCalled()
     expect(b.checkout).not.toHaveBeenCalled()
 
@@ -65,6 +69,8 @@ describe('ui-git-branch browser plugin', () => {
     expect(b.branch).toHaveBeenCalledWith({ root: '/repo' })
     await expect(injected.list('/repo')).resolves.toEqual(LIST)
     expect(b.list).toHaveBeenCalledWith({ root: '/repo' })
+    await expect(injected.status('/repo')).resolves.toEqual(STATUS)
+    expect(b.status).toHaveBeenCalledWith({ root: '/repo' })
     await expect(injected.create('/repo', 'feature-x')).resolves.toEqual({
       ok: true,
       branch: 'feature-x',
@@ -80,6 +86,8 @@ describe('ui-git-branch browser plugin', () => {
     await expect(injected.resolve('/repo')).resolves.toBeNull()
     b.list.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
     await expect(injected.list('/repo')).resolves.toBeNull()
+    b.status.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
+    await expect(injected.status('/repo')).resolves.toBeNull()
     b.create.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
     await expect(injected.create('/repo', 'feature-x')).resolves.toEqual({
       ok: false,

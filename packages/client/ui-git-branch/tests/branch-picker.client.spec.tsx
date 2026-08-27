@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { GitBranchPicker, type GitBranchPickerProps } from '../src/client/GitBranchPicker.tsx'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 type Sessions = { byId: Record<string, { cwd?: string }> }
 
@@ -17,6 +20,7 @@ function props(overrides: Partial<GitBranchPickerProps> = {}): GitBranchPickerPr
       selector({ byId: { s1: { cwd: '/repo' } } })) as never,
     resolve: vi.fn().mockResolvedValue({ branch: 'main', repo: '/repo' }),
     list: vi.fn().mockResolvedValue(LIST_MAIN),
+    status: vi.fn().mockResolvedValue({ repo: '/repo', changes: 0 }),
     create: vi.fn().mockResolvedValue({ ok: true, branch: 'feature-x' }),
     checkout: vi.fn().mockResolvedValue({ ok: true, branch: 'release' }),
     ...overrides,
@@ -30,6 +34,52 @@ describe('GitBranchPicker', () => {
     await screen.findByLabelText('branch main')
     expect(screen.getByText('main')).toBeDefined()
     expect(resolve).toHaveBeenCalledWith('/repo')
+  })
+
+  it('shows the pending-change badge with the change count', async () => {
+    const status = vi.fn().mockResolvedValue({ repo: '/repo', changes: 3 })
+    render(<GitBranchPicker {...props({ status })} />)
+    await screen.findByLabelText('3 pending changes')
+    expect(screen.getByText('3')).toBeDefined()
+  })
+
+  it('hides the badge when the tree is clean or status is unavailable', async () => {
+    const clean = vi.fn().mockResolvedValue({ repo: '/repo', changes: 0 })
+    const { unmount } = render(<GitBranchPicker {...props({ status: clean })} />)
+    await waitFor(() => { expect(clean).toHaveBeenCalled() })
+    expect(screen.queryByLabelText(/pending changes/)).toBeNull()
+    unmount()
+
+    const unavailable = vi.fn().mockResolvedValue(null)
+    render(<GitBranchPicker {...props({ status: unavailable })} />)
+    await waitFor(() => { expect(unavailable).toHaveBeenCalled() })
+    expect(screen.queryByLabelText(/pending changes/)).toBeNull()
+  })
+
+  it('re-polls the pending-change count while mounted', async () => {
+    vi.useFakeTimers()
+    const status = vi.fn().mockResolvedValue({ repo: '/repo', changes: 1 })
+    render(<GitBranchPicker {...props({ status })} />)
+    await act(async () => {})
+    await act(async () => {})
+    expect(screen.getByLabelText('1 pending changes')).toBeDefined()
+    await act(async () => { vi.advanceTimersByTime(5000) })
+    expect(status).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes the pending-change count after switching branches', async () => {
+    const status = vi.fn()
+      .mockResolvedValueOnce({ repo: '/repo', changes: 2 })
+      .mockResolvedValue({ repo: '/repo', changes: 0 })
+    render(<GitBranchPicker {...props({
+      status,
+      list: vi.fn().mockResolvedValue({ repo: '/repo', branches: ['main', 'release'] }),
+    })} />)
+    await screen.findByLabelText('2 pending changes')
+    fireEvent.click(screen.getByLabelText('branch main'))
+    fireEvent.click(await screen.findByRole('button', { name: 'release' }))
+    await waitFor(() => { expect(status).toHaveBeenCalledTimes(3) })
+    expect(screen.queryByLabelText(/pending changes/)).toBeNull()
   })
 
   it('opens a menu listing the local branches with the current one marked', async () => {

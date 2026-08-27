@@ -27,6 +27,10 @@ export function apply(ctx: ClientContext): void {
     const result = await ctx.remote.gitBranch.list({ root })
     return result.ok ? result.value : null
   }
+  const status: GitBranchPickerInjected['status'] = async (root) => {
+    const result = await ctx.remote.gitBranch.status({ root })
+    return result.ok ? result.value : null
+  }
   const create: GitBranchPickerInjected['create'] = async (root, name): Promise<GitBranchActionOutcome> => {
     const result = await ctx.remote.gitBranch.create({ root, name })
     return result.ok
@@ -44,6 +48,6 @@ export function apply(ctx: ClientContext): void {
     id: 'git-branch-picker',
     order: 10,
     label: () => 'Branch',
-    inject: (): GitBranchPickerInjected => ({ resolve, list, create, checkout }),
+    inject: (): GitBranchPickerInjected => ({ resolve, list, status, create, checkout }),
   }, GitBranchPicker))
 }

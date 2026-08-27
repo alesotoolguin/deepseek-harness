@@ -21,7 +21,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
   GitBranchCheckoutRequest, GitBranchCreateRequest, GitBranchListRequest, GitBranchListResult,
-  GitBranchRequest, GitBranchResult,
+  GitBranchRequest, GitBranchResult, GitBranchStatusResult,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -300,10 +300,42 @@ export class GitBranchGateway extends TypertRemoteService {
     const fallback = await this.harnessRoot()
     const info = (await findRepo(request.root)) ?? (fallback === null ? null : await findRepo(fallback))
     if (info === null) throw new Error(`no git repository found at or above ${request.root}`)
+    await this.runGit(info, ['checkout', request.name])
+    return request.name
+  }
+
+  /**
+   * Count the pending changes of the repository enclosing `request.root`
+   * (entries in `git status --porcelain`) through the subprocess service.
+   * @param request - workspace directory to resolve.
+   * @returns the repository directory and change count, or nulls outside any repository.
+   * @throws on a missing subprocess service or git failure.
+   */
+  @Remote('status')
+  async status(request: GitBranchRequest): Promise<GitBranchStatusResult> {
+    const fallback = await this.harnessRoot()
+    const info = (await findRepo(request.root)) ?? (fallback === null ? null : await findRepo(fallback))
+    if (info === null) return { repo: null, changes: 0 }
+    const stdout = await this.runGit(info, ['status', '--porcelain'])
+    const changes = stdout.split('\n').filter(line => line.trim() !== '').length
+    return { repo: info.repo, changes }
+  }
+
+  /**
+   * Run one git command in a repository through the subprocess service and
+   * return its stdout, throwing with the relayed failure text otherwise.
+   * @param info - repository to run in.
+   * @param args - git arguments (without the leading `git`).
+   * @returns the collected stdout.
+   * @throws on a missing subprocess service, spawn failure, or nonzero exit.
+   */
+  private async runGit(info: GitRepoInfo, args: readonly string[]): Promise<string> {
     const subprocess = this.ctx.get('subprocess')
-    if (subprocess === undefined) throw new Error('git checkout requires the subprocess service')
+    if (subprocess === undefined) {
+      throw new Error(`git ${args[0]} requires the subprocess service`)
+    }
     const handle = subprocess.spawn({
-      argv: ['git', 'checkout', request.name],
+      argv: ['git', ...args],
       cwd: info.repo,
       stdio: {
         stdin: 'ignore',
@@ -313,14 +345,16 @@ export class GitBranchGateway extends TypertRemoteService {
       graceMs: 10_000,
     })
     const outcome = await handle.done.catch((error: unknown) => {
-      throw new Error(`git checkout could not start: ${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(
+        `git ${args[0]} could not start: ${error instanceof Error ? error.message : String(error)}`,
+      )
     })
     if (outcome.exitCode !== 0) {
       const stderr = handle.collected.stderr?.readFrom(0).text.trim() ?? ''
       const stdout = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
-      throw new Error(`git checkout failed: ${stderr || stdout || `exit code ${String(outcome.exitCode)}`}`)
+      throw new Error(`git ${args[0]} failed: ${stderr || stdout || `exit code ${String(outcome.exitCode)}`}`)
     }
-    return request.name
+    return handle.collected.stdout?.readFrom(0).text ?? ''
   }
 
   /** Best-effort harness checkout root from the `harness:source` prompt section. */

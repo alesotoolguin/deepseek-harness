@@ -15,7 +15,7 @@ export type { TypertClientRemote as ClientRemote } from '@deepseek-ai/dsh-typert
 export type { PluginInventorySnapshot } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 export type {
   GitBranchCheckoutRequest, GitBranchCreateRequest, GitBranchListRequest, GitBranchListResult,
-  GitBranchRequest, GitBranchResult,
+  GitBranchRequest, GitBranchResult, GitBranchStatusResult,
 } from '@deepseek-ai/dsh-host-git-branch/types'
 export type {} from '@deepseek-ai/dsh-commands/remote'
 export type {} from '@deepseek-ai/dsh-file-reference/remote'

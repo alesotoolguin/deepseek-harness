@@ -45,14 +45,14 @@ interface FakeSpawnCall {
   readonly cwd: string
 }
 
-function fakeSubprocess(result: { exitCode: number; stderr?: string } = { exitCode: 0 }) {
+function fakeSubprocess(result: { exitCode?: number; stderr?: string; stdout?: string } = {}) {
   const calls: FakeSpawnCall[] = []
   const spawn = vi.fn((spec: { argv: readonly string[]; cwd: string }) => {
     calls.push({ argv: spec.argv, cwd: spec.cwd })
     return {
-      done: Promise.resolve({ exitCode: result.exitCode, signal: null }),
+      done: Promise.resolve({ exitCode: result.exitCode ?? 0, signal: null }),
       collected: {
-        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stdout: { readFrom: () => ({ text: result.stdout ?? '', nextOffset: 0, lossy: false }) },
         stderr: { readFrom: () => ({ text: result.stderr ?? '', nextOffset: 0, lossy: false }) },
       },
     }
@@ -61,7 +61,7 @@ function fakeSubprocess(result: { exitCode: number; stderr?: string } = { exitCo
 }
 
 describe('GitBranchGateway', () => {
-  it('publishes branch, list, create, and checkout under the gitBranch namespace', async () => {
+  it('publishes branch, list, create, checkout, and status under the gitBranch namespace', async () => {
     const { gateway } = await harness()
     expect(gateway.typertRemote).toMatchObject({
       serviceKey: 'gitBranch',
@@ -72,6 +72,7 @@ describe('GitBranchGateway', () => {
       { method: 'list', invocation: { kind: 'direct' } },
       { method: 'create', invocation: { kind: 'direct' } },
       { method: 'checkout', invocation: { kind: 'direct' } },
+      { method: 'status', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -157,6 +158,67 @@ describe('GitBranchGateway', () => {
     })
     await expect(gateway.checkout({ root: workspace, name: 'release' })).resolves.toBe('release')
     expect(calls).toEqual([{ argv: ['git', 'checkout', 'release'], cwd: harnessRoot }])
+  })
+
+  it('counts pending changes from git status --porcelain', async () => {
+    const { ctx, gateway } = await harness()
+    const root = await makeRepo(await tempDir())
+    const { spawn, calls } = fakeSubprocess({ stdout: ' M file.txt\n?? new.txt\n' })
+    ctx.provide('subprocess', { spawn })
+    await expect(gateway.status({ root })).resolves.toEqual({ repo: root, changes: 2 })
+    expect(calls).toEqual([{ argv: ['git', 'status', '--porcelain'], cwd: root }])
+  })
+
+  it('reports zero changes on a clean tree', async () => {
+    const { ctx, gateway } = await harness()
+    const root = await makeRepo(await tempDir())
+    ctx.provide('subprocess', { spawn: fakeSubprocess({ stdout: '' }).spawn })
+    await expect(gateway.status({ root })).resolves.toEqual({ repo: root, changes: 0 })
+  })
+
+  it('returns nulls outside any repository without spawning', async () => {
+    const { ctx, gateway } = await harness()
+    const { spawn, calls } = fakeSubprocess()
+    ctx.provide('subprocess', { spawn })
+    const root = await tempDir()
+    await expect(gateway.status({ root })).resolves.toEqual({ repo: null, changes: 0 })
+    expect(calls).toEqual([])
+  })
+
+  it('requires the subprocess service for status', async () => {
+    const { gateway } = await harness()
+    const root = await makeRepo(await tempDir())
+    await expect(gateway.status({ root })).rejects.toThrow(/git status requires the subprocess service/)
+  })
+
+  it('relays git status failures', async () => {
+    const { ctx, gateway } = await harness()
+    const root = await makeRepo(await tempDir())
+    ctx.provide('subprocess', {
+      spawn: fakeSubprocess({ exitCode: 128, stderr: 'fatal: not a git repository' }).spawn,
+    })
+    await expect(gateway.status({ root })).rejects.toThrow(/git status failed: fatal: not a git repository/)
+  })
+
+  it('counts status changes in the fallback repository outside any workspace repository', async () => {
+    const { ctx, gateway } = await harness()
+    const workspace = await tempDir()
+    const harnessRoot = await makeRepo(await tempDir())
+    const { spawn, calls } = fakeSubprocess({ stdout: ' M file.txt\n' })
+    ctx.provide('subprocess', { spawn })
+    ctx.provide('systemPrompt', {
+      assemble: async () => ({
+        sections: [{
+          name: 'harness:source',
+          text: `The DeepSeek Harness implementation checkout is at ${harnessRoot}.`,
+        }],
+      }),
+    })
+    await expect(gateway.status({ root: workspace })).resolves.toEqual({
+      repo: harnessRoot,
+      changes: 1,
+    })
+    expect(calls).toEqual([{ argv: ['git', 'status', '--porcelain'], cwd: harnessRoot }])
   })
 
   it('falls back to the harness checkout root from the systemPrompt section', async () => {

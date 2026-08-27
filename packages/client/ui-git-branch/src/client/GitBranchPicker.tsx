@@ -1,7 +1,10 @@
 import { useEffect, useState, type FormEvent, type FocusEvent, type KeyboardEvent, type ReactElement } from 'react'
-import type { GitBranchListResult, GitBranchResult } from '@deepseek-ai/dsh-api-remotes/client'
+import type { GitBranchListResult, GitBranchResult, GitBranchStatusResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './GitBranchPicker.module.css'
+
+/** How often the pending-change badge re-reads the repository status. */
+const STATUS_POLL_MS = 5000
 
 /** Outcome of a branch action (create or checkout), as the picker presents it. */
 export type GitBranchActionOutcome =
@@ -14,6 +17,8 @@ export interface GitBranchPickerInjected {
   resolve: (root: string) => Promise<GitBranchResult | null>
   /** List the local branches of the git repository enclosing `root`; null outside any repository. */
   list: (root: string) => Promise<GitBranchListResult | null>
+  /** Count the pending changes of the git repository enclosing `root`; null outside any repository. */
+  status: (root: string) => Promise<GitBranchStatusResult | null>
   /** Create a local branch at the current commit and switch to it. */
   create: (root: string, name: string) => Promise<GitBranchActionOutcome>
   /** Switch the working tree to an existing local branch. */
@@ -40,6 +45,7 @@ export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | nul
   const [result, setResult] = useState<GitBranchResult | null>(null)
   const [open, setOpen] = useState(false)
   const [list, setList] = useState<GitBranchListResult | null>(null)
+  const [status, setStatus] = useState<GitBranchStatusResult | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState<BusyAction>(null)
   const [error, setError] = useState<string | null>(null)
@@ -54,14 +60,33 @@ export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | nul
     return () => { alive = false }
   }, [cwd, props.resolve])
 
+  useEffect(() => {
+    if (cwd === undefined) {
+      setStatus(null)
+      return
+    }
+    const root = cwd
+    let alive = true
+    async function poll(): Promise<void> {
+      const next = await props.status(root)
+      if (alive) setStatus(next)
+    }
+    void poll()
+    const timer = setInterval(() => { void poll() }, STATUS_POLL_MS)
+    return () => { alive = false; clearInterval(timer) }
+  }, [cwd, props.status])
+
   if (result?.branch === undefined || result.branch === null) return null
   const repo = result.repo ?? cwd ?? ''
   const currentBranch = result.branch
 
   async function refresh(root: string): Promise<void> {
-    const [nextResult, nextList] = await Promise.all([props.resolve(root), props.list(root)])
+    const [nextResult, nextList, nextStatus] = await Promise.all([
+      props.resolve(root), props.list(root), props.status(root),
+    ])
     setResult(nextResult)
     setList(nextList)
+    setStatus(nextStatus)
   }
 
   function onToggle(): void {
@@ -71,7 +96,10 @@ export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | nul
     }
     setOpen(true)
     setError(null)
-    if (cwd !== undefined) void props.list(cwd).then(setList)
+    if (cwd !== undefined) {
+      void props.list(cwd).then(setList)
+      void props.status(cwd).then(setStatus)
+    }
   }
 
   async function onCreate(event: FormEvent): Promise<void> {
@@ -129,6 +157,15 @@ export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | nul
           <circle cx="12" cy="13" r="1.6" fill="currentColor" />
         </svg>
         <span className={css.name}>{currentBranch}</span>
+        {status !== null && status.changes > 0 && (
+          <span
+            className={css.dirty}
+            title={`${status.changes} pending change${status.changes === 1 ? '' : 's'}`}
+            aria-label={`${status.changes} pending changes`}
+          >
+            {status.changes}
+          </span>
+        )}
         <svg className={css.chevron} viewBox="0 0 16 16" aria-hidden="true">
           <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
