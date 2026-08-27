@@ -53,4 +53,21 @@ describe('resolveGitBranch', () => {
     const root = await tempDir()
     await expect(resolveGitBranch(root)).resolves.toEqual({ branch: null, repo: null })
   })
+
+  it('falls back to the harness checkout root outside any repository', async () => {
+    const workspace = await tempDir()
+    const harness = await tempDir()
+    await mkdir(path.join(harness, '.git'), { recursive: true })
+    await writeFile(path.join(harness, '.git', 'HEAD'), 'ref: refs/heads/harness-main\n')
+    await expect(resolveGitBranch(workspace, harness)).resolves.toEqual({
+      branch: 'harness-main',
+      repo: harness,
+    })
+  })
+
+  it('ignores an unreachable fallback root', async () => {
+    const workspace = await tempDir()
+    const empty = await tempDir()
+    await expect(resolveGitBranch(workspace, empty)).resolves.toEqual({ branch: null, repo: null })
+  })
 })

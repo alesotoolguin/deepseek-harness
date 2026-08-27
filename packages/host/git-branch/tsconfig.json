@@ -12,6 +12,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../core/system-prompt"
+    },
+    {
       "path": "../../typert/protocol"
     },
     {

@@ -11,7 +11,10 @@ export const name = 'host-git-branch-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/** No runtime invariant: every branch snapshot is read directly from the repository on each call. */
+/**
+ * No runtime invariant: every snapshot is read directly from the repository
+ * per call, and create writes the ref and HEAD in the same call.
+ */
 const install: InvariantInstaller = () => {}
 
 /** Register this package's invariant companion. */

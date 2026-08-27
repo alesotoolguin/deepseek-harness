@@ -4,13 +4,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply, inject } from '../src/client/index.ts'
-import { GitBranchBadge, type GitBranchBadgeInjected } from '../src/client/GitBranchBadge.tsx'
+import { GitBranchPicker, type GitBranchPickerInjected } from '../src/client/GitBranchPicker.tsx'
 
 afterEach(cleanup)
 
 const BRANCH = { branch: 'main', repo: '/repo' }
-type BranchResult =
-  | { readonly ok: true; readonly value: typeof BRANCH }
+const LIST = { repo: '/repo', branches: ['main'] }
+type Result<T> =
+  | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
 async function bench() {
@@ -22,10 +23,14 @@ async function bench() {
     }
   }
   new RemoteService(ctx)
-  const branch = vi.fn<() => Promise<BranchResult>>()
+  const branch = vi.fn<() => Promise<Result<typeof BRANCH>>>()
     .mockResolvedValue({ ok: true, value: BRANCH })
-  ctx.provide('remote.gitBranch', { branch })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, branch }
+  const list = vi.fn<() => Promise<Result<typeof LIST>>>()
+    .mockResolvedValue({ ok: true, value: LIST })
+  const create = vi.fn<() => Promise<Result<string>>>()
+    .mockResolvedValue({ ok: true, value: 'feature-x' })
+  ctx.provide('remote.gitBranch', { branch, list, create })
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, branch, list, create }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -40,22 +45,38 @@ describe('ui-git-branch browser plugin', () => {
     expect(inject).toEqual(['slots', 'remote', 'remote.gitBranch'])
   })
 
-  it('registers the badge without reading the Remote eagerly', async () => {
+  it('registers the picker without reading the Remote eagerly', async () => {
     const b = await bench()
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
 
     const entry = b.slots.entries('conversation.session.header.utilities')[0]!
-    expect(entry.component).toBe(GitBranchBadge)
-    expect(entry.options).toMatchObject({ id: 'git-branch-badge', order: 10 })
+    expect(entry.component).toBe(GitBranchPicker)
+    expect(entry.options).toMatchObject({ id: 'git-branch-picker', order: 10 })
     expect(b.branch).not.toHaveBeenCalled()
+    expect(b.list).not.toHaveBeenCalled()
+    expect(b.create).not.toHaveBeenCalled()
 
-    const injected = (entry.inject as unknown as () => GitBranchBadgeInjected)()
+    const injected = (entry.inject as unknown as () => GitBranchPickerInjected)()
     await expect(injected.resolve('/repo')).resolves.toEqual(BRANCH)
     expect(b.branch).toHaveBeenCalledWith({ root: '/repo' })
+    await expect(injected.list('/repo')).resolves.toEqual(LIST)
+    expect(b.list).toHaveBeenCalledWith({ root: '/repo' })
+    await expect(injected.create('/repo', 'feature-x')).resolves.toEqual({
+      ok: true,
+      branch: 'feature-x',
+    })
+    expect(b.create).toHaveBeenCalledWith({ root: '/repo', name: 'feature-x' })
 
     b.branch.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
     await expect(injected.resolve('/repo')).resolves.toBeNull()
+    b.list.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
+    await expect(injected.list('/repo')).resolves.toBeNull()
+    b.create.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
+    await expect(injected.create('/repo', 'feature-x')).resolves.toEqual({
+      ok: false,
+      message: 'unavailable',
+    })
     await b.ctx.fiber.dispose()
   })
 
@@ -72,7 +93,7 @@ describe('ui-git-branch browser plugin', () => {
     expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
     declare(b.slots)
     await vi.waitFor(() => {
-      expect(b.slots.entries('conversation.session.header.utilities')[0]?.component).toBe(GitBranchBadge)
+      expect(b.slots.entries('conversation.session.header.utilities')[0]?.component).toBe(GitBranchPicker)
     })
 
     await fiber.dispose()

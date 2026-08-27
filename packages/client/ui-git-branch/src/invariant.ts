@@ -11,7 +11,7 @@ export const name = 'client-ui-git-branch-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/** No runtime invariant: the badge is a read-only projection of a Remote branch snapshot. */
+/** No runtime invariant: the picker is a projection of Remote branch snapshots, and create errors surface inline. */
 const install: InvariantInstaller = () => {}
 
 /** Register this package's invariant companion. */
