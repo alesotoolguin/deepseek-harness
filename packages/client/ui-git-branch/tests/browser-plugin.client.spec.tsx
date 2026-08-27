@@ -29,8 +29,10 @@ async function bench() {
     .mockResolvedValue({ ok: true, value: LIST })
   const create = vi.fn<() => Promise<Result<string>>>()
     .mockResolvedValue({ ok: true, value: 'feature-x' })
-  ctx.provide('remote.gitBranch', { branch, list, create })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, branch, list, create }
+  const checkout = vi.fn<() => Promise<Result<string>>>()
+    .mockResolvedValue({ ok: true, value: 'release' })
+  ctx.provide('remote.gitBranch', { branch, list, create, checkout })
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, branch, list, create, checkout }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -56,6 +58,7 @@ describe('ui-git-branch browser plugin', () => {
     expect(b.branch).not.toHaveBeenCalled()
     expect(b.list).not.toHaveBeenCalled()
     expect(b.create).not.toHaveBeenCalled()
+    expect(b.checkout).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => GitBranchPickerInjected)()
     await expect(injected.resolve('/repo')).resolves.toEqual(BRANCH)
@@ -67,6 +70,11 @@ describe('ui-git-branch browser plugin', () => {
       branch: 'feature-x',
     })
     expect(b.create).toHaveBeenCalledWith({ root: '/repo', name: 'feature-x' })
+    await expect(injected.checkout('/repo', 'release')).resolves.toEqual({
+      ok: true,
+      branch: 'release',
+    })
+    expect(b.checkout).toHaveBeenCalledWith({ root: '/repo', name: 'release' })
 
     b.branch.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
     await expect(injected.resolve('/repo')).resolves.toBeNull()
@@ -74,6 +82,11 @@ describe('ui-git-branch browser plugin', () => {
     await expect(injected.list('/repo')).resolves.toBeNull()
     b.create.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
     await expect(injected.create('/repo', 'feature-x')).resolves.toEqual({
+      ok: false,
+      message: 'unavailable',
+    })
+    b.checkout.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
+    await expect(injected.checkout('/repo', 'release')).resolves.toEqual({
       ok: false,
       message: 'unavailable',
     })

@@ -4,12 +4,12 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
   GitBranchPicker,
-  type GitBranchCreateOutcome,
+  type GitBranchActionOutcome,
   type GitBranchPickerInjected,
 } from './GitBranchPicker.tsx'
 
 export type {
-  GitBranchCreateOutcome,
+  GitBranchActionOutcome,
   GitBranchPickerInjected,
   GitBranchPickerProps,
 } from './GitBranchPicker.tsx'
@@ -27,8 +27,14 @@ export function apply(ctx: ClientContext): void {
     const result = await ctx.remote.gitBranch.list({ root })
     return result.ok ? result.value : null
   }
-  const create: GitBranchPickerInjected['create'] = async (root, name): Promise<GitBranchCreateOutcome> => {
+  const create: GitBranchPickerInjected['create'] = async (root, name): Promise<GitBranchActionOutcome> => {
     const result = await ctx.remote.gitBranch.create({ root, name })
+    return result.ok
+      ? { ok: true, branch: result.value }
+      : { ok: false, message: result.error.message }
+  }
+  const checkout: GitBranchPickerInjected['checkout'] = async (root, name): Promise<GitBranchActionOutcome> => {
+    const result = await ctx.remote.gitBranch.checkout({ root, name })
     return result.ok
       ? { ok: true, branch: result.value }
       : { ok: false, message: result.error.message }
@@ -38,6 +44,6 @@ export function apply(ctx: ClientContext): void {
     id: 'git-branch-picker',
     order: 10,
     label: () => 'Branch',
-    inject: (): GitBranchPickerInjected => ({ resolve, list, create }),
+    inject: (): GitBranchPickerInjected => ({ resolve, list, create, checkout }),
   }, GitBranchPicker))
 }

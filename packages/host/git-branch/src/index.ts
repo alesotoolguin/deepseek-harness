@@ -1,9 +1,11 @@
 /**
- * Resolve, list, and create local git branches of the repository enclosing a
- * workspace directory by reading and writing its `.git` state directly (no
- * git binary dependency). Outside any repository the gateway falls back to
- * the harness checkout surfaced by the `harness:source` prompt section, so
- * the GUI badge still works when the workspace itself is not a repository.
+ * Resolve, list, create, and check out local git branches of the repository
+ * enclosing a workspace directory. Reads and writes `.git` state directly
+ * (no git binary dependency) for resolution, listing, and create; checkout
+ * delegates the working-tree update to `git checkout` through the subprocess
+ * service. Outside any repository the gateway falls back to the harness
+ * checkout surfaced by the `harness:source` prompt section, so the GUI badge
+ * still works when the workspace itself is not a repository.
  */
 
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
@@ -15,8 +17,10 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from 'zod'
 // Side-effect type import: resolves `ctx.get('systemPrompt')` to the service.
 import type {} from '@deepseek-ai/dsh-system-prompt'
+// Side-effect type import: resolves `ctx.get('subprocess')` to the service.
+import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
-  GitBranchCreateRequest, GitBranchListRequest, GitBranchListResult,
+  GitBranchCheckoutRequest, GitBranchCreateRequest, GitBranchListRequest, GitBranchListResult,
   GitBranchRequest, GitBranchResult,
 } from './types.ts'
 
@@ -143,7 +147,7 @@ export function isValidBranchName(name: string): boolean {
  * @returns the checkout root, or null when the text does not carry one.
  */
 export function harnessRootFromSection(text: string): string | null {
-  const match = /checkout is at (.+?)(?:\.\s|$)/m.exec(text)
+  const match = /checkout is at (.+?)(?:\.(?:\s|$)|$)/m.exec(text)
   return match?.[1] === undefined ? null : match[1].trim()
 }
 
@@ -281,6 +285,42 @@ export class GitBranchGateway extends TypertRemoteService {
   @Remote('create')
   async create(request: GitBranchCreateRequest): Promise<string> {
     return createBranch(request.root, request.name, await this.harnessRoot())
+  }
+
+  /**
+   * Switch the working tree to an existing local branch, delegating the
+   * worktree update to `git checkout` through the subprocess service.
+   * @param request - workspace directory and branch name.
+   * @returns the checked-out branch name.
+   * @throws on invalid names, no repository, a missing subprocess service, or git failure.
+   */
+  @Remote('checkout')
+  async checkout(request: GitBranchCheckoutRequest): Promise<string> {
+    if (!isValidBranchName(request.name)) throw new Error(`invalid branch name "${request.name}"`)
+    const fallback = await this.harnessRoot()
+    const info = (await findRepo(request.root)) ?? (fallback === null ? null : await findRepo(fallback))
+    if (info === null) throw new Error(`no git repository found at or above ${request.root}`)
+    const subprocess = this.ctx.get('subprocess')
+    if (subprocess === undefined) throw new Error('git checkout requires the subprocess service')
+    const handle = subprocess.spawn({
+      argv: ['git', 'checkout', request.name],
+      cwd: info.repo,
+      stdio: {
+        stdin: 'ignore',
+        stdout: { maxBytes: 64 * 1024 },
+        stderr: { maxBytes: 64 * 1024 },
+      },
+      graceMs: 10_000,
+    })
+    const outcome = await handle.done.catch((error: unknown) => {
+      throw new Error(`git checkout could not start: ${error instanceof Error ? error.message : String(error)}`)
+    })
+    if (outcome.exitCode !== 0) {
+      const stderr = handle.collected.stderr?.readFrom(0).text.trim() ?? ''
+      const stdout = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
+      throw new Error(`git checkout failed: ${stderr || stdout || `exit code ${String(outcome.exitCode)}`}`)
+    }
+    return request.name
   }
 
   /** Best-effort harness checkout root from the `harness:source` prompt section. */

@@ -32,3 +32,10 @@ export interface GitBranchCreateRequest {
   /** Local branch name, validated like `git check-ref-format`. */
   readonly name: string
 }
+
+/** Remote request: switch the working tree to an existing local branch. */
+export interface GitBranchCheckoutRequest {
+  readonly root: string
+  /** Local branch name to check out. */
+  readonly name: string
+}

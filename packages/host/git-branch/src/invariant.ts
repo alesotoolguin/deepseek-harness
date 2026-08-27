@@ -13,7 +13,8 @@ export const inject = ['invariants']
 
 /**
  * No runtime invariant: every snapshot is read directly from the repository
- * per call, and create writes the ref and HEAD in the same call.
+ * per call, create writes the ref and HEAD in the same call, and checkout
+ * delegates the worktree update to git through the subprocess service.
  */
 const install: InvariantInstaller = () => {}
 

@@ -35,8 +35,33 @@ async function makeRepo(root: string): Promise<string> {
   return root
 }
 
+interface FakeSpawnCall {
+  readonly argv: readonly string[]
+  readonly cwd: string
+}
+
+interface FakeSpawnCall {
+  readonly argv: readonly string[]
+  readonly cwd: string
+}
+
+function fakeSubprocess(result: { exitCode: number; stderr?: string } = { exitCode: 0 }) {
+  const calls: FakeSpawnCall[] = []
+  const spawn = vi.fn((spec: { argv: readonly string[]; cwd: string }) => {
+    calls.push({ argv: spec.argv, cwd: spec.cwd })
+    return {
+      done: Promise.resolve({ exitCode: result.exitCode, signal: null }),
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: result.stderr ?? '', nextOffset: 0, lossy: false }) },
+      },
+    }
+  })
+  return { spawn, calls }
+}
+
 describe('GitBranchGateway', () => {
-  it('publishes branch, list, and create under the gitBranch namespace', async () => {
+  it('publishes branch, list, create, and checkout under the gitBranch namespace', async () => {
     const { gateway } = await harness()
     expect(gateway.typertRemote).toMatchObject({
       serviceKey: 'gitBranch',
@@ -46,6 +71,7 @@ describe('GitBranchGateway', () => {
       { method: 'branch', invocation: { kind: 'direct' } },
       { method: 'list', invocation: { kind: 'direct' } },
       { method: 'create', invocation: { kind: 'direct' } },
+      { method: 'checkout', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -67,6 +93,70 @@ describe('GitBranchGateway', () => {
     await expect(gateway.create({ root, name: 'feature-x' })).resolves.toBe('feature-x')
     await expect(readFile(path.join(root, '.git', 'HEAD'), 'utf8'))
       .resolves.toBe('ref: refs/heads/feature-x\n')
+  })
+
+  it('checks out a branch over the Remote face through git', async () => {
+    const { ctx, gateway } = await harness()
+    const root = await makeRepo(await tempDir())
+    const { spawn, calls } = fakeSubprocess()
+    ctx.provide('subprocess', { spawn })
+    await expect(gateway.checkout({ root, name: 'release' })).resolves.toBe('release')
+    expect(calls).toEqual([{ argv: ['git', 'checkout', 'release'], cwd: root }])
+  })
+
+  it('surfaces git checkout failures', async () => {
+    const { ctx, gateway } = await harness()
+    const root = await makeRepo(await tempDir())
+    ctx.provide('subprocess', {
+      spawn: fakeSubprocess({ exitCode: 1, stderr: 'error: your local changes would be overwritten' }).spawn,
+    })
+    await expect(gateway.checkout({ root, name: 'release' })).rejects
+      .toThrow(/git checkout failed: error: your local changes/)
+  })
+
+  it('rejects a spawn-level git failure', async () => {
+    const { ctx, gateway } = await harness()
+    const root = await makeRepo(await tempDir())
+    const spawn = vi.fn(() => ({
+      done: Promise.reject(new Error('spawn git ENOENT')),
+      collected: {},
+    }))
+    ctx.provide('subprocess', { spawn })
+    await expect(gateway.checkout({ root, name: 'release' })).rejects
+      .toThrow(/git checkout could not start: spawn git ENOENT/)
+  })
+
+  it('requires the subprocess service for checkout', async () => {
+    const { gateway } = await harness()
+    const root = await makeRepo(await tempDir())
+    await expect(gateway.checkout({ root, name: 'release' })).rejects
+      .toThrow(/requires the subprocess service/)
+  })
+
+  it('rejects invalid checkout names and roots outside any repository', async () => {
+    const { gateway } = await harness()
+    const root = await makeRepo(await tempDir())
+    await expect(gateway.checkout({ root, name: '-x' })).rejects.toThrow(/invalid branch name/)
+    await expect(gateway.checkout({ root: await tempDir(), name: 'release' })).rejects
+      .toThrow(/no git repository/)
+  })
+
+  it('checks out in the fallback repository outside any workspace repository', async () => {
+    const { ctx, gateway } = await harness()
+    const workspace = await tempDir()
+    const harnessRoot = await makeRepo(await tempDir())
+    const { spawn, calls } = fakeSubprocess()
+    ctx.provide('subprocess', { spawn })
+    ctx.provide('systemPrompt', {
+      assemble: async () => ({
+        sections: [{
+          name: 'harness:source',
+          text: `The DeepSeek Harness implementation checkout is at ${harnessRoot}.`,
+        }],
+      }),
+    })
+    await expect(gateway.checkout({ root: workspace, name: 'release' })).resolves.toBe('release')
+    expect(calls).toEqual([{ argv: ['git', 'checkout', 'release'], cwd: harnessRoot }])
   })
 
   it('falls back to the harness checkout root from the systemPrompt section', async () => {
@@ -137,6 +227,10 @@ describe('harnessRootFromSection', () => {
 
   it('parses a bare path without a trailing sentence', () => {
     expect(harnessRootFromSection('checkout is at /a/b')).toBe('/a/b')
+  })
+
+  it('parses a path followed only by a period at the end of the text', () => {
+    expect(harnessRootFromSection('The DeepSeek Harness implementation checkout is at /a/b.')).toBe('/a/b')
   })
 
   it('returns null for unrelated text', () => {

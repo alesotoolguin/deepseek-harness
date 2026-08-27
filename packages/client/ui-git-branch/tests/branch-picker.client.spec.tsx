@@ -18,6 +18,7 @@ function props(overrides: Partial<GitBranchPickerProps> = {}): GitBranchPickerPr
     resolve: vi.fn().mockResolvedValue({ branch: 'main', repo: '/repo' }),
     list: vi.fn().mockResolvedValue(LIST_MAIN),
     create: vi.fn().mockResolvedValue({ ok: true, branch: 'feature-x' }),
+    checkout: vi.fn().mockResolvedValue({ ok: true, branch: 'release' }),
     ...overrides,
   } as GitBranchPickerProps
 }
@@ -38,6 +39,51 @@ describe('GitBranchPicker', () => {
     await screen.findByText('release')
     expect(list).toHaveBeenCalledWith('/repo')
     expect(screen.getByText('✓')).toBeDefined()
+  })
+
+  it('shows the checked-out branch as the create base', async () => {
+    render(<GitBranchPicker {...props()} />)
+    fireEvent.click(await screen.findByLabelText('branch main'))
+    await screen.findByText('Base: main')
+  })
+
+  it('keeps the current branch row disabled', async () => {
+    render(<GitBranchPicker {...props()} />)
+    fireEvent.click(await screen.findByLabelText('branch main'))
+    const current = await screen.findByRole('button', { name: 'main' })
+    expect((current as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('switches to a listed branch and refreshes badge and list', async () => {
+    const resolve = vi.fn()
+      .mockResolvedValueOnce({ branch: 'main', repo: '/repo' })
+      .mockResolvedValueOnce({ branch: 'release', repo: '/repo' })
+    const list = vi.fn()
+      .mockResolvedValueOnce({ repo: '/repo', branches: ['main', 'release'] })
+      .mockResolvedValueOnce({ repo: '/repo', branches: ['main', 'release'] })
+    const checkout = vi.fn().mockResolvedValue({ ok: true, branch: 'release' })
+    render(<GitBranchPicker {...props({ resolve, list, checkout })} />)
+    fireEvent.click(await screen.findByLabelText('branch main'))
+    fireEvent.click(await screen.findByRole('button', { name: 'release' }))
+
+    await screen.findByLabelText('branch release')
+    expect(checkout).toHaveBeenCalledWith('/repo', 'release')
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(2) })
+    const switched = screen.getByRole('button', { name: 'release' }) as HTMLButtonElement
+    expect(switched.disabled).toBe(true)
+  })
+
+  it('shows the checkout failure inline and keeps the menu open', async () => {
+    const list = vi.fn().mockResolvedValue({ repo: '/repo', branches: ['main', 'release'] })
+    const checkout = vi.fn()
+      .mockResolvedValue({ ok: false, message: 'error: your local changes would be overwritten' })
+    render(<GitBranchPicker {...props({ list, checkout })} />)
+    fireEvent.click(await screen.findByLabelText('branch main'))
+    fireEvent.click(await screen.findByRole('button', { name: 'release' }))
+
+    await screen.findByRole('alert')
+    expect(screen.getByText('error: your local changes would be overwritten')).toBeDefined()
+    expect(list).toHaveBeenCalledTimes(1)
   })
 
   it('creates a branch, clears the draft, and refreshes badge and list', async () => {

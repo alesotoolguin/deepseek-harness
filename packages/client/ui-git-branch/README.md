@@ -2,7 +2,7 @@
 
 Session-header git branch picker for the DeepSeek Harness Web GUI. The browser plugin registers one additive `conversation.session.header.utilities` contribution with id `git-branch-picker`; the picker reads the active session's workspace directory from the standard session hooks, lazily calls the [`gitBranch`](../../host/git-branch/README.md) Remotes through [`api-remotes`](../../api/remotes/README.md) on mount, and renders the checked-out branch as a small monospace pill — or nothing outside any repository.
 
-Clicking the pill opens a menu listing the local branches of the workspace's repository (the current branch marked) with a form to create a new branch at the current commit, which switches to it and refreshes the pill and the list. Create failures (invalid names, existing branches) render inline in the menu. Outside any repository the host falls back to the harness checkout surfaced by the `harness:source` prompt section, so the pill still appears when the workspace itself is not a repository.
+Clicking the pill opens a menu listing the local branches of the workspace's repository: the current branch is marked and its row disabled, clicking any other row switches to it (`gitBranch/checkout`, which runs `git checkout`), and a form below creates a new branch at the current commit — the row above the form shows the checked-out branch as the create base. Create and checkout failures (invalid names, existing branches, conflicting local changes) render inline in the menu, and both actions refresh the pill and the list. Outside any repository the host falls back to the harness checkout surfaced by the `harness:source` prompt section, so the pill still appears when the workspace itself is not a repository.
 
 It performs no Remote read during plugin activation: the picker resolves only when a session header with a workspace directory actually mounts, and lists only when the menu opens. Styles come from semantic `--dsw-*` theme tokens; there is no product copy to localize beyond the accessible `branch <name>` label.
 
@@ -16,5 +16,6 @@ None; this package never assembles model input.
 
 ## Known Limitations and Deferred Work
 
-- **List and create only** — the menu shows local branches but cannot switch to an existing branch or delete one; the list refreshes on every open and after a create.
+- **No deletion, no remote refs** — the menu lists local branches only and cannot delete one; the list refreshes on every open and after each action.
+- **Checkout needs git** — switching rows runs `git checkout` on the host, so it fails loud in a deployment without the `subprocess` service or a `git` binary (create and list still work).
 - **Workspace-scoped** — a session whose workspace directory lies outside any repository falls back to the harness checkout when the web bundle surfaced it, and otherwise renders nothing.
