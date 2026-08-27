@@ -100,6 +100,10 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
+    # Read-only git branch resolution for the session-header branch badge.
+    - id: git-branch
+      name: '@deepseek-ai/dsh-host-git-branch'
+
     # The API gateway: the transport-agnostic dispatch face every client shape
     # shares. The base layer's agent-default-model service owns the default model.
     - id: api-gateway
@@ -270,6 +274,10 @@
     # Model selection: the /model popupSelect + composer seat over session.models.
     - id: ui-model-selection
       name: '@deepseek-ai/dsh-client-ui-model-selection'
+
+    # Session-header badge with the checked-out branch of the workspace's repository.
+    - id: ui-git-branch
+      name: '@deepseek-ai/dsh-client-ui-git-branch'
 
     - id: ui-permission
       name: '@deepseek-ai/dsh-client-ui-permission-presets'
