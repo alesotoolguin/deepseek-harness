@@ -3,10 +3,14 @@
   display: inline-flex;
 }
 
-/* Hero dock seat: the pill centers on its own line above the composer. */
+/* Hero dock seat: float the pill to the hero's top-right corner instead of
+   taking its own line above the composer (the composerHero box is the
+   nearest positioned ancestor). */
 .wrapperHero {
-  display: flex;
-  justify-content: center;
+  position: absolute;
+  top: 4px;
+  right: 0;
+  z-index: 2;
 }
 
 .button {
