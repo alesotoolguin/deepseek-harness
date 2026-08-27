@@ -4,9 +4,36 @@
 }
 
 /* Hero row seat: the pill rides the workspace row right after the agent
-   preset, with a small gap from the chip group. */
+   preset, with a small gap from the chip group, and mirrors the hero chips'
+   geometry and interaction (transparent pill that fills on hover). */
 .wrapperHero {
   margin-left: 8px;
+}
+
+.wrapperHero .button {
+  min-height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.wrapperHero .button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.wrapperHero .icon {
+  color: var(--dsw-alias-label-primary);
+}
+
+.wrapperHero .chevron {
+  color: var(--dsw-alias-label-caption);
 }
 
 .button {
