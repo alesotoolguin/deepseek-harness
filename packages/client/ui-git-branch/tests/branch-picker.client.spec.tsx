@@ -10,17 +10,19 @@ afterEach(() => {
 
 type Sessions = { byId: Record<string, { cwd?: string }> }
 type Workspaces = { items: Array<{ sessionIds: string[]; path: string }> }
+type SessionRow = { sessionId: string; blank: boolean }
 
 const LIST_MAIN = { repo: '/repo', branches: ['main'] }
 
 function props(overrides: Partial<GitBranchPickerProps> = {}): GitBranchPickerProps {
   return {
-    useSession: ((selector: (s: { sessionId: string }) => unknown) =>
-      selector({ sessionId: 's1' })) as never,
+    useSession: ((selector: (s: SessionRow) => unknown) =>
+      selector({ sessionId: 's1', blank: false })) as never,
     useSessions: ((selector: (s: Sessions) => unknown) =>
       selector({ byId: { s1: { cwd: '/repo' } } })) as never,
     useWorkspaces: ((selector: (s: Workspaces) => unknown) =>
       selector({ items: [] })) as never,
+    variant: 'header',
     resolve: vi.fn().mockResolvedValue({ branch: 'main', repo: '/repo' }),
     list: vi.fn().mockResolvedValue(LIST_MAIN),
     status: vi.fn().mockResolvedValue({ repo: '/repo', changes: 0 }),
@@ -50,6 +52,29 @@ describe('GitBranchPicker', () => {
     })} />)
     await screen.findByLabelText('branch main')
     expect(resolve).toHaveBeenCalledWith('/workspace')
+  })
+
+  it('hero variant shows the branch while the session is blank', async () => {
+    const resolve = vi.fn().mockResolvedValue({ branch: 'main', repo: '/workspace' })
+    render(<GitBranchPicker {...props({
+      variant: 'hero',
+      useSession: ((selector: (s: SessionRow) => unknown) =>
+        selector({ sessionId: 's1', blank: true })) as never,
+      useSessions: ((selector: (s: Sessions) => unknown) =>
+        selector({ byId: { s1: {} } })) as never,
+      useWorkspaces: ((selector: (s: Workspaces) => unknown) =>
+        selector({ items: [{ sessionIds: ['s1'], path: '/workspace' }] })) as never,
+      resolve,
+    })} />)
+    await screen.findByLabelText('branch main')
+    expect(resolve).toHaveBeenCalledWith('/workspace')
+  })
+
+  it('hero variant renders nothing once the session is engaged', async () => {
+    const resolve = vi.fn().mockResolvedValue({ branch: 'main', repo: '/repo' })
+    render(<GitBranchPicker {...props({ variant: 'hero', resolve })} />)
+    await waitFor(() => { expect(resolve).toHaveBeenCalled() })
+    expect(screen.queryByLabelText(/^branch /)).toBeNull()
   })
 
   it('shows the pending-change badge with the change count', async () => {

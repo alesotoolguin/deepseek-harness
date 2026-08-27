@@ -3,6 +3,12 @@
   display: inline-flex;
 }
 
+/* Hero dock seat: the pill centers on its own line above the composer. */
+.wrapperHero {
+  display: flex;
+  justify-content: center;
+}
+
 .button {
   display: inline-flex;
   align-items: center;

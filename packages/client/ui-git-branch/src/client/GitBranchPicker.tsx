@@ -13,6 +13,12 @@ export type GitBranchActionOutcome =
 
 /** Registration-side Remote face used by the picker. */
 export interface GitBranchPickerInjected {
+  /**
+   * Which seat this instance renders in: the session-header strip (always)
+   * or the hero dock of a blank session (visible only while the session is
+   * still blank, until the header takes over).
+   */
+  variant: 'header' | 'hero'
   /** Resolve the branch of the git repository enclosing `root`; null outside any repository. */
   resolve: (root: string) => Promise<GitBranchResult | null>
   /** List the local branches of the git repository enclosing `root`; null outside any repository. */
@@ -25,9 +31,9 @@ export interface GitBranchPickerInjected {
   checkout: (root: string, name: string) => Promise<GitBranchActionOutcome>
 }
 
-/** Full component props assembled by the session-header utilities slot renderer. */
+/** Full component props assembled by either the header utilities or the input dock renderer. */
 export type GitBranchPickerProps =
-  PropsRuntime<'conversation.session.header.utilities'>
+  PropsRuntime<'conversation.session.header.utilities' | 'conversation.input.dock'>
   & InjectFace<GitBranchPickerInjected>
 
 /** One in-flight branch action, or null when idle. */
@@ -41,6 +47,7 @@ type BusyAction = 'create' | 'checkout' | null
  */
 export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | null {
   const sessionId = props.useSession(s => s.sessionId)
+  const blank = props.useSession(s => s.blank)
   const cwd = props.useSessions(s => s.byId[sessionId]?.cwd)
   // A blank session has no cwd until its first run starts; the workspace it
   // is connected to carries the same directory, so the picker resolves that
@@ -82,6 +89,11 @@ export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | nul
     const timer = setInterval(() => { void poll() }, STATUS_POLL_MS)
     return () => { alive = false; clearInterval(timer) }
   }, [root, props.status])
+
+  // The hero dock instance only exists while the session is still blank;
+  // once the conversation starts, the session header (with its own picker)
+  // takes over, so this seat must go silent to avoid a duplicate pill.
+  if (props.variant === 'hero' && !blank) return null
 
   if (result?.branch === undefined || result.branch === null) return null
   const repo = result.repo ?? root ?? ''
@@ -147,7 +159,11 @@ export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | nul
   }
 
   return (
-    <div className={css.wrapper} onBlur={onBlur} onKeyDown={onKeyDown}>
+    <div
+      className={props.variant === 'hero' ? `${css.wrapper} ${css.wrapperHero}` : css.wrapper}
+      onBlur={onBlur}
+      onKeyDown={onKeyDown}
+    >
       <button
         type="button"
         className={css.button}

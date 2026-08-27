@@ -41,60 +41,69 @@ async function bench() {
 function declare(slots: SlotRegistry): () => void {
   return slots.register({
     name: 'root',
-    children: { 'conversation.session.header.utilities': { kind: 'list', scope: 'session' } },
+    children: {
+      'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+      'conversation.input.dock': { kind: 'list', scope: 'session' },
+    },
   } as never, () => null)
 }
 
 describe('ui-git-branch browser plugin', () => {
-  it('declares only the services used by the header Remote contribution', () => {
+  it('declares only the services used by the Remote contributions', () => {
     expect(inject).toEqual(['slots', 'remote', 'remote.gitBranch'])
   })
 
-  it('registers the picker without reading the Remote eagerly', async () => {
+  it('registers the header and hero pickers without reading the Remote eagerly', async () => {
     const b = await bench()
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
 
-    const entry = b.slots.entries('conversation.session.header.utilities')[0]!
-    expect(entry.component).toBe(GitBranchPicker)
-    expect(entry.options).toMatchObject({ id: 'git-branch-picker', order: 10 })
+    const header = b.slots.entries('conversation.session.header.utilities')[0]!
+    const hero = b.slots.entries('conversation.input.dock')[0]!
+    expect(header.component).toBe(GitBranchPicker)
+    expect(header.options).toMatchObject({ id: 'git-branch-picker', order: 10 })
+    expect(hero.component).toBe(GitBranchPicker)
+    expect(hero.options).toMatchObject({ id: 'git-branch-hero', order: 10 })
     expect(b.branch).not.toHaveBeenCalled()
     expect(b.list).not.toHaveBeenCalled()
     expect(b.status).not.toHaveBeenCalled()
     expect(b.create).not.toHaveBeenCalled()
     expect(b.checkout).not.toHaveBeenCalled()
 
-    const injected = (entry.inject as unknown as () => GitBranchPickerInjected)()
-    await expect(injected.resolve('/repo')).resolves.toEqual(BRANCH)
+    const headerInjected = (header.inject as unknown as () => GitBranchPickerInjected)()
+    const heroInjected = (hero.inject as unknown as () => GitBranchPickerInjected)()
+    expect(headerInjected.variant).toBe('header')
+    expect(heroInjected.variant).toBe('hero')
+    await expect(headerInjected.resolve('/repo')).resolves.toEqual(BRANCH)
     expect(b.branch).toHaveBeenCalledWith({ root: '/repo' })
-    await expect(injected.list('/repo')).resolves.toEqual(LIST)
+    await expect(heroInjected.list('/repo')).resolves.toEqual(LIST)
     expect(b.list).toHaveBeenCalledWith({ root: '/repo' })
-    await expect(injected.status('/repo')).resolves.toEqual(STATUS)
+    await expect(headerInjected.status('/repo')).resolves.toEqual(STATUS)
     expect(b.status).toHaveBeenCalledWith({ root: '/repo' })
-    await expect(injected.create('/repo', 'feature-x')).resolves.toEqual({
+    await expect(heroInjected.create('/repo', 'feature-x')).resolves.toEqual({
       ok: true,
       branch: 'feature-x',
     })
     expect(b.create).toHaveBeenCalledWith({ root: '/repo', name: 'feature-x' })
-    await expect(injected.checkout('/repo', 'release')).resolves.toEqual({
+    await expect(headerInjected.checkout('/repo', 'release')).resolves.toEqual({
       ok: true,
       branch: 'release',
     })
     expect(b.checkout).toHaveBeenCalledWith({ root: '/repo', name: 'release' })
 
     b.branch.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
-    await expect(injected.resolve('/repo')).resolves.toBeNull()
+    await expect(heroInjected.resolve('/repo')).resolves.toBeNull()
     b.list.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
-    await expect(injected.list('/repo')).resolves.toBeNull()
+    await expect(headerInjected.list('/repo')).resolves.toBeNull()
     b.status.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
-    await expect(injected.status('/repo')).resolves.toBeNull()
+    await expect(heroInjected.status('/repo')).resolves.toBeNull()
     b.create.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
-    await expect(injected.create('/repo', 'feature-x')).resolves.toEqual({
+    await expect(headerInjected.create('/repo', 'feature-x')).resolves.toEqual({
       ok: false,
       message: 'unavailable',
     })
     b.checkout.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
-    await expect(injected.checkout('/repo', 'release')).resolves.toEqual({
+    await expect(heroInjected.checkout('/repo', 'release')).resolves.toEqual({
       ok: false,
       message: 'unavailable',
     })
@@ -106,19 +115,26 @@ describe('ui-git-branch browser plugin', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.slots.entries('conversation.input.dock')).toHaveLength(0)
 
     const stop = declare(b.slots)
-    await vi.waitFor(() => { expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(1) })
+    await vi.waitFor(() => {
+      expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(1)
+      expect(b.slots.entries('conversation.input.dock')).toHaveLength(1)
+    })
 
     stop()
     expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.slots.entries('conversation.input.dock')).toHaveLength(0)
     declare(b.slots)
     await vi.waitFor(() => {
       expect(b.slots.entries('conversation.session.header.utilities')[0]?.component).toBe(GitBranchPicker)
+      expect(b.slots.entries('conversation.input.dock')[0]?.component).toBe(GitBranchPicker)
     })
 
     await fiber.dispose()
     expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.slots.entries('conversation.input.dock')).toHaveLength(0)
     await b.ctx.fiber.dispose()
   })
 })

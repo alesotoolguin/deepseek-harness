@@ -48,6 +48,20 @@ export function apply(ctx: ClientContext): void {
     id: 'git-branch-picker',
     order: 10,
     label: () => 'Branch',
-    inject: (): GitBranchPickerInjected => ({ resolve, list, status, create, checkout }),
+    inject: (): GitBranchPickerInjected => ({
+      variant: 'header', resolve, list, status, create, checkout,
+    }),
+  }, GitBranchPicker))
+  // The blank-session header is hidden by design, so the picker also rides
+  // the hero input dock — its own line above the composer — while the
+  // session is still blank, and goes silent once the header takes over.
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
+    id: 'git-branch-hero',
+    order: 10,
+    label: () => 'Branch',
+    inject: (): GitBranchPickerInjected => ({
+      variant: 'hero', resolve, list, status, create, checkout,
+    }),
   }, GitBranchPicker))
 }
