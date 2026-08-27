@@ -31,9 +31,9 @@ export interface GitBranchPickerInjected {
   checkout: (root: string, name: string) => Promise<GitBranchActionOutcome>
 }
 
-/** Full component props assembled by either the header utilities or the input dock renderer. */
+/** Full component props assembled by either the header utilities or the hero row renderer. */
 export type GitBranchPickerProps =
-  PropsRuntime<'conversation.session.header.utilities' | 'conversation.input.dock'>
+  PropsRuntime<'conversation.session.header.utilities' | 'conversation.hero.workspace.utilities'>
   & InjectFace<GitBranchPickerInjected>
 
 /** One in-flight branch action, or null when idle. */

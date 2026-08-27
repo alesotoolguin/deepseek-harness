@@ -43,7 +43,7 @@ function declare(slots: SlotRegistry): () => void {
     name: 'root',
     children: {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
-      'conversation.input.dock': { kind: 'list', scope: 'session' },
+      'conversation.hero.workspace.utilities': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
 }
@@ -59,7 +59,7 @@ describe('ui-git-branch browser plugin', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
 
     const header = b.slots.entries('conversation.session.header.utilities')[0]!
-    const hero = b.slots.entries('conversation.input.dock')[0]!
+    const hero = b.slots.entries('conversation.hero.workspace.utilities')[0]!
     expect(header.component).toBe(GitBranchPicker)
     expect(header.options).toMatchObject({ id: 'git-branch-picker', order: 10 })
     expect(hero.component).toBe(GitBranchPicker)
@@ -115,26 +115,26 @@ describe('ui-git-branch browser plugin', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
-    expect(b.slots.entries('conversation.input.dock')).toHaveLength(0)
+    expect(b.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(0)
 
     const stop = declare(b.slots)
     await vi.waitFor(() => {
       expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(1)
-      expect(b.slots.entries('conversation.input.dock')).toHaveLength(1)
+      expect(b.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(1)
     })
 
     stop()
     expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
-    expect(b.slots.entries('conversation.input.dock')).toHaveLength(0)
+    expect(b.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(0)
     declare(b.slots)
     await vi.waitFor(() => {
       expect(b.slots.entries('conversation.session.header.utilities')[0]?.component).toBe(GitBranchPicker)
-      expect(b.slots.entries('conversation.input.dock')[0]?.component).toBe(GitBranchPicker)
+      expect(b.slots.entries('conversation.hero.workspace.utilities')[0]?.component).toBe(GitBranchPicker)
     })
 
     await fiber.dispose()
     expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
-    expect(b.slots.entries('conversation.input.dock')).toHaveLength(0)
+    expect(b.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(0)
     await b.ctx.fiber.dispose()
   })
 })

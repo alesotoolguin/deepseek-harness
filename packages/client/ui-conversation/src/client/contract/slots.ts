@@ -187,6 +187,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * the next one rather than applied to a current one.
      */
     'conversation.hero.agentPreset': { kind: 'single'; scope: 'root'; owner: HeroAgentPresetOwnerProps }
+    /**
+     * Trailing additive utilities inside the hero workspace row, after the
+     * agent-preset selector — the seat for per-workspace status that rides
+     * the row without shifting the hero layout (the git branch pill). Session
+     * scope: the row's status is per-session, and a no-session cold start
+     * has nothing to show.
+     */
+    'conversation.hero.workspace.utilities': { kind: 'list'; scope: 'session'; owner: HeroWorkspaceUtilitiesOwnerProps }
     // 'conversation.input.overlay' merges in ui-input-trigger (the dependency
     // direction is the hard constraint — ui-input-trigger cannot import
     // this package, while this package's input contract already imports
@@ -295,6 +303,9 @@ export interface HeroAgentPresetOwnerProps {
   /** Marker field: the chip owns its own roster, staging, and menu state. */
   children?: never
 }
+
+/** Empty owner share of the hero workspace-row utilities seat. */
+export interface HeroWorkspaceUtilitiesOwnerProps {}
 
 /** Owner share of the strict session content seat. */
 export interface ConversationSessionOwnerProps {
@@ -646,6 +657,7 @@ export type ConversationSlotProps =
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
     | 'conversation.hero.agentPreset'
+    | 'conversation.hero.workspace.utilities'
   >
   & InjectFace<ConversationInjected>
   & PropsLocale<'conversation'>

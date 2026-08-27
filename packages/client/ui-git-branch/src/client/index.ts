@@ -53,10 +53,10 @@ export function apply(ctx: ClientContext): void {
     }),
   }, GitBranchPicker))
   // The blank-session header is hidden by design, so the picker also rides
-  // the hero input dock — its own line above the composer — while the
-  // session is still blank, and goes silent once the header takes over.
-  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-    name: 'conversation.input.dock',
+  // the hero workspace row, right after the agent preset, while the session
+  // is still blank, and goes silent once the header takes over.
+  ctx.slots.inject('conversation.hero.workspace.utilities', () => ctx.slots.register({
+    name: 'conversation.hero.workspace.utilities',
     id: 'git-branch-hero',
     order: 10,
     label: () => 'Branch',
