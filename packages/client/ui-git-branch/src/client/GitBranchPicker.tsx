@@ -42,6 +42,13 @@ type BusyAction = 'create' | 'checkout' | null
 export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | null {
   const sessionId = props.useSession(s => s.sessionId)
   const cwd = props.useSessions(s => s.byId[sessionId]?.cwd)
+  // A blank session has no cwd until its first run starts; the workspace it
+  // is connected to carries the same directory, so the picker resolves that
+  // path and shows the branch immediately after the workspace is picked.
+  const workspacePath = props.useWorkspaces(s =>
+    s.items.find(w => w.sessionIds.includes(sessionId))?.path,
+  )
+  const root = cwd ?? workspacePath
   const [result, setResult] = useState<GitBranchResult | null>(null)
   const [open, setOpen] = useState(false)
   const [list, setList] = useState<GitBranchListResult | null>(null)
@@ -51,38 +58,38 @@ export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | nul
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (cwd === undefined) {
+    if (root === undefined) {
       setResult(null)
       return
     }
     let alive = true
-    void props.resolve(cwd).then((next) => { if (alive) setResult(next) })
+    void props.resolve(root).then((next) => { if (alive) setResult(next) })
     return () => { alive = false }
-  }, [cwd, props.resolve])
+  }, [root, props.resolve])
 
   useEffect(() => {
-    if (cwd === undefined) {
+    if (root === undefined) {
       setStatus(null)
       return
     }
-    const root = cwd
+    const rootDir = root
     let alive = true
     async function poll(): Promise<void> {
-      const next = await props.status(root)
+      const next = await props.status(rootDir)
       if (alive) setStatus(next)
     }
     void poll()
     const timer = setInterval(() => { void poll() }, STATUS_POLL_MS)
     return () => { alive = false; clearInterval(timer) }
-  }, [cwd, props.status])
+  }, [root, props.status])
 
   if (result?.branch === undefined || result.branch === null) return null
-  const repo = result.repo ?? cwd ?? ''
+  const repo = result.repo ?? root ?? ''
   const currentBranch = result.branch
 
-  async function refresh(root: string): Promise<void> {
+  async function refresh(rootDir: string): Promise<void> {
     const [nextResult, nextList, nextStatus] = await Promise.all([
-      props.resolve(root), props.list(root), props.status(root),
+      props.resolve(rootDir), props.list(rootDir), props.status(rootDir),
     ])
     setResult(nextResult)
     setList(nextList)
@@ -96,39 +103,39 @@ export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | nul
     }
     setOpen(true)
     setError(null)
-    if (cwd !== undefined) {
-      void props.list(cwd).then(setList)
-      void props.status(cwd).then(setStatus)
+    if (root !== undefined) {
+      void props.list(root).then(setList)
+      void props.status(root).then(setStatus)
     }
   }
 
   async function onCreate(event: FormEvent): Promise<void> {
     event.preventDefault()
     const name = draft.trim()
-    if (cwd === undefined || name === '' || busy !== null) return
+    if (root === undefined || name === '' || busy !== null) return
     setBusy('create')
     setError(null)
-    const outcome = await props.create(cwd, name)
+    const outcome = await props.create(root, name)
     setBusy(null)
     if (!outcome.ok) {
       setError(outcome.message)
       return
     }
     setDraft('')
-    await refresh(cwd)
+    await refresh(root)
   }
 
   async function onCheckout(name: string): Promise<void> {
-    if (cwd === undefined || busy !== null || name === currentBranch) return
+    if (root === undefined || busy !== null || name === currentBranch) return
     setBusy('checkout')
     setError(null)
-    const outcome = await props.checkout(cwd, name)
+    const outcome = await props.checkout(root, name)
     setBusy(null)
     if (!outcome.ok) {
       setError(outcome.message)
       return
     }
-    await refresh(cwd)
+    await refresh(root)
   }
 
   function onBlur(event: FocusEvent<HTMLDivElement>): void {

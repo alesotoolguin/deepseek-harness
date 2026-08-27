@@ -9,6 +9,7 @@ afterEach(() => {
 })
 
 type Sessions = { byId: Record<string, { cwd?: string }> }
+type Workspaces = { items: Array<{ sessionIds: string[]; path: string }> }
 
 const LIST_MAIN = { repo: '/repo', branches: ['main'] }
 
@@ -18,6 +19,8 @@ function props(overrides: Partial<GitBranchPickerProps> = {}): GitBranchPickerPr
       selector({ sessionId: 's1' })) as never,
     useSessions: ((selector: (s: Sessions) => unknown) =>
       selector({ byId: { s1: { cwd: '/repo' } } })) as never,
+    useWorkspaces: ((selector: (s: Workspaces) => unknown) =>
+      selector({ items: [] })) as never,
     resolve: vi.fn().mockResolvedValue({ branch: 'main', repo: '/repo' }),
     list: vi.fn().mockResolvedValue(LIST_MAIN),
     status: vi.fn().mockResolvedValue({ repo: '/repo', changes: 0 }),
@@ -34,6 +37,19 @@ describe('GitBranchPicker', () => {
     await screen.findByLabelText('branch main')
     expect(screen.getByText('main')).toBeDefined()
     expect(resolve).toHaveBeenCalledWith('/repo')
+  })
+
+  it('shows the branch of a blank session through its workspace path', async () => {
+    const resolve = vi.fn().mockResolvedValue({ branch: 'main', repo: '/workspace' })
+    render(<GitBranchPicker {...props({
+      useSessions: ((selector: (s: Sessions) => unknown) =>
+        selector({ byId: { s1: {} } })) as never,
+      useWorkspaces: ((selector: (s: Workspaces) => unknown) =>
+        selector({ items: [{ sessionIds: ['s1'], path: '/workspace' }] })) as never,
+      resolve,
+    })} />)
+    await screen.findByLabelText('branch main')
+    expect(resolve).toHaveBeenCalledWith('/workspace')
   })
 
   it('shows the pending-change badge with the change count', async () => {
