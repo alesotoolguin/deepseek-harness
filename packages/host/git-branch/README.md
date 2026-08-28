@@ -1,5 +1,7 @@
 # @deepseek-ai/dsh-host-git-branch
 
+English | [中文](README.zh.md)
+
 Local git branch operations for a workspace directory. Resolution, listing, and create read and write the repository's `.git` state directly (no git binary dependency); checkout and status delegate to `git checkout` and `git status` through the `subprocess` service. `GitBranchGateway` registers the `gitBranch` service and publishes five generated direct Remotes:
 
 - `gitBranch/branch` — resolve the checked-out branch of the repository enclosing a directory. Every call walks up from the requested directory until it finds a repository, reads its `.git/HEAD` (following linked-worktree `gitdir:` files, and reporting a detached HEAD as a short commit), and returns the branch name plus the repository directory — or nulls outside any repository.

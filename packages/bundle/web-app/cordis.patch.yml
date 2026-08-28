@@ -104,6 +104,11 @@
     - id: git-branch
       name: '@deepseek-ai/dsh-host-git-branch'
 
+    # DeepSeek account balance query (GET /user/balance) for the ui-balance
+    # settings section; publishes the `balance` Remote namespace.
+    - id: web-balance
+      name: '@deepseek-ai/dsh-web-balance'
+
     # The API gateway: the transport-agnostic dispatch face every client shape
     # shares. The base layer's agent-default-model service owns the default model.
     - id: api-gateway
@@ -278,6 +283,10 @@
     # Session-header badge with the checked-out branch of the workspace's repository.
     - id: ui-git-branch
       name: '@deepseek-ai/dsh-client-ui-git-branch'
+
+    # DeepSeek account balance settings section over the web-balance Remote.
+    - id: ui-balance
+      name: '@deepseek-ai/dsh-client-ui-balance'
 
     - id: ui-permission
       name: '@deepseek-ai/dsh-client-ui-permission-presets'

@@ -9,6 +9,7 @@ import gitBranchRemote from '@deepseek-ai/dsh-host-git-branch/remote'
 import pluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 import messageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
 import sessionReferencesRemote from '@deepseek-ai/dsh-session-reference/remote'
+import balanceRemote from '@deepseek-ai/dsh-web-balance/remote'
 import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 
 export type { TypertClientRemote as ClientRemote } from '@deepseek-ai/dsh-typert-protocol'
@@ -24,6 +25,7 @@ export type {} from '@deepseek-ai/dsh-host-git-branch/remote'
 export type {} from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 export type {} from '@deepseek-ai/dsh-message-feedback/remote'
 export type {} from '@deepseek-ai/dsh-session-reference/remote'
+export type {} from '@deepseek-ai/dsh-web-balance/remote'
 // The forwarded-event allowlist's selection seat: without it in the consumer's
 // compilation face `TypertRemoteEvent` is `never` and every `$on` call fails.
 export type { ApiRemoteForwardedEvent } from '../types.ts'
@@ -36,6 +38,11 @@ export type {} from '@deepseek-ai/dsh-credentials/types'
 export type {} from '@deepseek-ai/dsh-llm/types'
 export type {} from '@deepseek-ai/dsh-agent-presets/types'
 export type {} from '@deepseek-ai/dsh-settings/types'
+// The balance domain's client-safe vocabulary, so browser consumers name the
+// wire types through this single assembly instead of importing the Host package.
+export type {
+  BalanceCurrencyView, BalanceErrorCode, BalanceResult, BalanceView,
+} from '@deepseek-ai/dsh-web-balance/types'
 
 /**
  * The carrier's Client-facing types, re-exported so a business package names one
@@ -122,6 +129,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     for (const contribution of [
       commandsRemote, goalsRemote, dynamicRemote, fileReferencesRemote,
       gitBranchRemote, pluginInventoryRemote, messageFeedbackRemote, sessionReferencesRemote,
+      balanceRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
     }

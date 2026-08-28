@@ -58,6 +58,9 @@
       "path": "../../settings/settings"
     },
     {
+      "path": "../../web/web-balance"
+    },
+    {
       "path": "../../typert/protocol"
     }
   ]

@@ -1,5 +1,7 @@
 # @deepseek-ai/dsh-client-ui-git-branch
 
+English | [中文](README.zh.md)
+
 Session-header git branch picker for the DeepSeek Harness Web GUI. The browser plugin registers two additive contributions — `conversation.session.header.utilities` (id `git-branch-picker`) and, for blank sessions, `conversation.input.dock` (id `git-branch-hero`); the picker reads the active session's workspace directory from the standard session hooks, lazily calls the [`gitBranch`](../../host/git-branch/README.md) Remotes through [`api-remotes`](../../api/remotes/README.md) on mount, and renders the checked-out branch as a small monospace pill — or nothing outside any repository.
 
 The pill appears as soon as the session is connected to a workspace: a blank session has no `cwd` until its first run starts, so the picker resolves the owning workspace's path (via the standard `useWorkspaces` feed) and switches to the session `cwd` once the conversation starts. The blank-session header is hidden by design, so the hero variant of the same picker rides the hero workspace row right after the agent preset (the additive `conversation.hero.workspace.utilities` seat) while the session is still blank, and goes silent the moment the conversation starts and the header pill takes over.
