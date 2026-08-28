@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Browser settings section **Saldo DeepSeek**: an account balance page for the DeepSeek API, rendered from the [`balance` Remote namespace](../../web/web-balance/README.md) (`ctx.remote.balance.getBalance()`). It lists one card per reported currency (total, granted, and topped-up balance), a manual **Actualizar** button, the last-update time, and a one-minute auto-refresh while the page is open.
 
-The section registers into the `settings.section` list slot (order 30, id `deepseek-balance`). The Host service owns credential resolution and the HTTP call; this package renders the structured `BalanceResult` and maps each failure code to a user-facing message. Failures never expose the API key, and a failed auto-refresh keeps the last readout visible beside the error banner.
+The section registers into the `settings.section` list slot (order 30, id `deepseek-balance`) and renders two cards: the account balance and a per-model usage card fed by `ctx.remote.balance.getModelUsage()` (calls and input/cache/output/reasoning tokens per `provider/model` route, accumulated for the process lifetime). The Host service owns credential resolution and the HTTP call; this package renders the structured results and maps each failure code to a user-facing message. Failures never expose the API key, and a failed auto-refresh keeps the last readout visible beside the error banner.
 
 ## Mounting
 

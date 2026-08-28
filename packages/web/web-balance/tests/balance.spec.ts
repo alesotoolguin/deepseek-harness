@@ -4,6 +4,7 @@ import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environ
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import BalanceService, { BALANCE_URL, DEFAULT_API_KEY_ENV } from '../src/index.ts'
 import type { BalanceResult } from '../src/types.ts'
+import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 
 const contexts: Context[] = []
 
@@ -52,6 +53,7 @@ describe('BalanceService', () => {
       namespace: 'balance',
     })
     expect(remoteMethods(service)).toEqual([
+      { method: 'getModelUsage', invocation: { kind: 'direct' } },
       { method: 'getBalance', invocation: { kind: 'direct' } },
     ])
   })
@@ -331,5 +333,91 @@ describe('BalanceService', () => {
     const result: BalanceResult = await service.getBalance()
 
     expect(JSON.stringify(result)).not.toContain('sk-super-secret')
+  })
+})
+
+describe('BalanceService per-model usage accumulation', () => {
+  type UsageSample = {
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+    reasoningTokens?: number
+  }
+
+  function usageStream(usages: UsageSample[]): AsyncIterable<StreamChunk> {
+    return (async function* () {
+      yield { type: 'text-delta', index: 0, text: 'x' }
+      for (const usage of usages) yield { type: 'usage', usage }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    })()
+  }
+
+  function options(provider: string, model: string): GenerateOptions {
+    return { provider, model } as GenerateOptions
+  }
+
+  it('publishes getModelUsage under the balance namespace', async () => {
+    const { service } = await harness()
+    expect(service.typertRemote).toMatchObject({ serviceKey: 'balance', namespace: 'balance' })
+    expect(remoteMethods(service)).toEqual(
+      expect.arrayContaining([{ method: 'getModelUsage', invocation: { kind: 'direct' } }]),
+    )
+  })
+
+  it('folds usage chunks by provider/model and re-yields every chunk', async () => {
+    const { ctx, service } = await harness()
+
+    const out = ctx.waterfall('llm/stream', options('deepseek', 'deepseek-v4-pro'), () =>
+      usageStream([{ inputTokens: 5, outputTokens: 2 }]))
+
+    const chunks: StreamChunk[] = []
+    for await (const chunk of out) chunks.push(chunk)
+    expect(chunks.map(chunk => chunk.type)).toEqual(['text-delta', 'usage', 'finish'])
+
+    const view = service.getModelUsage()
+    expect(view.models).toHaveLength(1)
+    expect(view.models[0]).toMatchObject({
+      provider: 'deepseek',
+      model: 'deepseek-v4-pro',
+      calls: 1,
+      inputTokens: 5,
+      outputTokens: 2,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+    })
+    expect(typeof view.since).toBe('string')
+  })
+
+  it('accumulates across calls and folds optional cache and reasoning fields', async () => {
+    const { ctx, service } = await harness()
+
+    for (const [model, usages] of [
+      ['m1', [{ inputTokens: 10, outputTokens: 3, cacheReadTokens: 7, cacheWriteTokens: 1, reasoningTokens: 2 }]],
+      ['m1', [{ inputTokens: 1, outputTokens: 1 }]],
+      ['m2', [{ inputTokens: 0, outputTokens: 0 }]],
+    ] as const) {
+      // Drenar el stream: el wrapper es un generador perezoso.
+      const out = ctx.waterfall('llm/stream', options('deepseek', model), () => usageStream([...usages]))
+      for await (const _ of out) void _
+    }
+
+    const view = service.getModelUsage()
+    expect(view.models).toHaveLength(2)
+    expect(view.models[0]).toMatchObject({
+      model: 'm1', calls: 2, inputTokens: 11, outputTokens: 4, cacheReadTokens: 7, cacheWriteTokens: 1, reasoningTokens: 2,
+    })
+    expect(view.models[1]).toMatchObject({ model: 'm2', calls: 1 })
+  })
+
+  it('does not create a row for a stream without a usage chunk', async () => {
+    const { ctx, service } = await harness()
+
+    const out = ctx.waterfall('llm/stream', options('deepseek', 'silent'), () =>
+      (async function* () { yield { type: 'text-delta', index: 0, text: 'x' } })())
+    for await (const _ of out) void _
+
+    expect(service.getModelUsage().models).toHaveLength(0)
   })
 })

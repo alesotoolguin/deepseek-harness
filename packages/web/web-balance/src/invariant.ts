@@ -16,9 +16,11 @@ export const inject = ['invariants']
 
 /**
  * No runtime invariant: the service owns one outbound HTTP request whose
- * response is parsed and returned synchronously inside the same call, so there
- * is no later authoritative in-process event to relate it to. Wire parsing is
- * pinned at the service boundary instead.
+ * response is parsed and returned synchronously inside the same call, and an
+ * in-memory usage fold fed by `llm/stream` chunks that is only observable
+ * through the `getModelUsage` read — no later authoritative in-process event
+ * exists to relate either to. Wire parsing and the fold are pinned at the
+ * service boundary and in unit tests instead.
  */
 const install: InvariantInstaller = () => {}
 

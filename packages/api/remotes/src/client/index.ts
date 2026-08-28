@@ -42,6 +42,7 @@ export type {} from '@deepseek-ai/dsh-settings/types'
 // wire types through this single assembly instead of importing the Host package.
 export type {
   BalanceCurrencyView, BalanceErrorCode, BalanceResult, BalanceView,
+  ModelUsageRow, ModelUsageView,
 } from '@deepseek-ai/dsh-web-balance/types'
 
 /**

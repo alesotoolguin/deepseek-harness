@@ -15,6 +15,10 @@ Status: implemented
 - `@deepseek-ai/dsh-web-balance` — 一个 Host 服务（`ctx.balance`），继承 `TypertRemoteService`，带一个 `@Remote('getBalance')` 方法，发布 `balance` Remote 命名空间。它每次调用通过可选的 `ctx.credentials` 接缝解析 `DEEPSEEK_API_KEY`（回退到启动环境），然后使用原生 `fetch` 调用 `GET https://api.deepseek.com/user/balance`，`redirect: 'error'`（携带凭据的请求必须在重定向上失败）、15 秒 `AbortSignal.timeout` 和 64KiB 响应上限。密钥绝不离 Host，也绝不出现在失败详情中。
 - `@deepseek-ai/dsh-client-ui-balance` — 浏览器半端，注册 `settings.section` 页面 `deepseek-balance`（order 30，标签 **Saldo DeepSeek**），为每种报告的货币渲染一张卡片（总额、赠送、充值），带手动刷新按钮、上次更新时间，以及页面打开时每 60 秒自动刷新。刷新失败时保留上次读数并显示错误横幅。
 
+### 按模型用量累积
+
+一个全局 `llm/stream` waterfall listener 包裹每次流式模型调用，并将报告的 `usage` chunk 折叠到按 `provider/model` 键控的内存累加器中；`balance/getModelUsage` Remote 提供进程生命周期的快照（每条路由的调用数加 input/output/cache-read/cache-write/reasoning token）。浏览器节将其渲染为余额下方的第二张卡片。计时指标（LLM 墙钟时间、TTFT、tok/s）仍保留在 `session-stats` projection 的会话级，而非按模型。
+
 ### RPC 与装配
 
 客户端通过 typert gateway 调用 `ctx.remote.balance.getBalance()`；`packages/api/remotes` 导入生成的 `@deepseek-ai/dsh-web-balance/remote` 贡献、挂载它，并重新导出该域的客户端安全类型。Host 方法返回一个**扁平**的 `BalanceResult`（`ok`/`data`/`error`/`detail`），带稳定的 `BalanceErrorCode` 值（`credential-error`、`no-api-key`、`request-failed`、`bad-response`）；选择扁平对象而非判别联合，是为了让生成的 zod codec 保持简单。

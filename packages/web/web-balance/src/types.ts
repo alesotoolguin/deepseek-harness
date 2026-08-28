@@ -42,3 +42,35 @@ export interface BalanceResult {
   readonly error: BalanceErrorCode | null
   readonly detail: string
 }
+
+/** One model route's accumulated usage since the harness process started. */
+export interface ModelUsageRow {
+  /** Provider route key reported by the call (`GenerateOptions.provider`). */
+  readonly provider: string
+  /** Model name reported by the call (`GenerateOptions.model`). */
+  readonly model: string
+  /** Number of streamed model calls counted. */
+  readonly calls: number
+  /** Uncached input tokens (`TokenUsage.inputTokens`). */
+  readonly inputTokens: number
+  /** Output tokens (`TokenUsage.outputTokens`). */
+  readonly outputTokens: number
+  /** Cached-input tokens read (`TokenUsage.cacheReadTokens`). */
+  readonly cacheReadTokens: number
+  /** Cached-input tokens written (`TokenUsage.cacheWriteTokens`). */
+  readonly cacheWriteTokens: number
+  /** Reasoning tokens (`TokenUsage.reasoningTokens`). */
+  readonly reasoningTokens: number
+  /** ISO timestamp of the first counted call. */
+  readonly firstSeenAt: string
+  /** ISO timestamp of the most recent counted call. */
+  readonly lastSeenAt: string
+}
+
+/** Live per-model usage view served to the browser. */
+export interface ModelUsageView {
+  /** One row per `provider/model` route, ordered by first call. */
+  readonly models: readonly ModelUsageRow[]
+  /** ISO timestamp of the accumulator's start (process start / plugin mount). */
+  readonly since: string
+}

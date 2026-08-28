@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { BalanceSection, type BalanceSectionProps } from '../src/client/BalanceSection.tsx'
-import type { BalanceResult, BalanceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { BalanceResult, BalanceView, ModelUsageView } from '@deepseek-ai/dsh-api-remotes/client'
 
 afterEach(() => {
   cleanup()
@@ -20,6 +20,22 @@ const VIEW: BalanceView = {
   fetchedAt: '2026-01-01T10:00:00.000Z',
 }
 
+const USAGE: ModelUsageView = {
+  since: '2026-01-01T10:00:00.000Z',
+  models: [{
+    provider: 'deepseek',
+    model: 'deepseek-v4-pro',
+    calls: 2,
+    inputTokens: 1000,
+    outputTokens: 500,
+    cacheReadTokens: 4000,
+    cacheWriteTokens: 100,
+    reasoningTokens: 250,
+    firstSeenAt: '2026-01-01T10:00:00.000Z',
+    lastSeenAt: '2026-01-01T10:00:01.000Z',
+  }],
+}
+
 function okResult(data: BalanceView = VIEW): BalanceResult {
   return { ok: true, error: null, detail: '', data }
 }
@@ -35,6 +51,7 @@ function props(overrides: Partial<BalanceSectionProps> = {}): BalanceSectionProp
     useWorkspaces: (() => undefined) as never,
     close: () => {},
     refresh: vi.fn().mockResolvedValue(okResult()),
+    refreshUsage: vi.fn().mockResolvedValue({ since: '2026-01-01T10:00:00.000Z', models: [] }),
     interval: vi.fn(() => () => {}),
     ...overrides,
   } as BalanceSectionProps
@@ -188,5 +205,69 @@ describe('BalanceSection', () => {
     unmount()
 
     expect(stop).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ModelUsageCard within BalanceSection', () => {
+  it('shows per-model call and token totals', async () => {
+    render(<BalanceSection {...props({
+      refreshUsage: vi.fn().mockResolvedValue(USAGE),
+    })} />)
+
+    await screen.findByText('Uso por modelo')
+    expect(screen.getByText('deepseek-v4-pro')).toBeDefined()
+    expect(screen.getByText(/2 llamadas/)).toBeDefined()
+    expect(screen.getByText(/Input 1,000/)).toBeDefined()
+    expect(screen.getByText(/Cache 4,000/)).toBeDefined()
+    expect(screen.getByText(/Output 500/)).toBeDefined()
+    expect(screen.getByText(/Raz\. 250/)).toBeDefined()
+  })
+
+  it('shows the empty state before any call is registered', async () => {
+    render(<BalanceSection {...props()} />)
+
+    await screen.findByText('Uso por modelo')
+    expect(screen.getByText('Aún no hay llamadas registradas en este proceso.')).toBeDefined()
+  })
+
+  it('shows an error when the usage Remote fails and keeps the last view', async () => {
+    const refreshUsage = vi.fn()
+      .mockResolvedValueOnce(USAGE)
+      .mockResolvedValueOnce(null)
+    const interval = vi.fn((cb: () => void) => {
+      cb()
+      return () => {}
+    })
+    render(<BalanceSection {...props({ refreshUsage, interval })} />)
+
+    await screen.findByText('deepseek-v4-pro')
+    await waitFor(() => {
+      expect(screen.getByText('No se pudo consultar el uso por modelo.')).toBeDefined()
+    })
+    // La vista anterior sigue visible junto al aviso.
+    expect(screen.getByText('deepseek-v4-pro')).toBeDefined()
+  })
+
+  it('formats a single call in singular', async () => {
+    render(<BalanceSection {...props({
+      refreshUsage: vi.fn().mockResolvedValue({
+        since: '2026-01-01T10:00:00.000Z',
+        models: [{
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          calls: 1,
+          inputTokens: 1,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          reasoningTokens: 0,
+          firstSeenAt: '2026-01-01T10:00:00.000Z',
+          lastSeenAt: '2026-01-01T10:00:00.000Z',
+        }],
+      }),
+    })} />)
+
+    await screen.findByText('deepseek-chat')
+    expect(screen.getByText(/1 llamada/)).toBeDefined()
   })
 })

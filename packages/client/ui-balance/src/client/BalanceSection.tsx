@@ -1,15 +1,19 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { BalanceErrorCode, BalanceResult, BalanceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  BalanceErrorCode, BalanceResult, BalanceView, ModelUsageView,
+} from '@deepseek-ai/dsh-api-remotes/client'
 import css from './BalanceSection.module.css'
 
-/** Auto-refresh interval for the balance readout. */
+/** Auto-refresh interval for the readout. */
 export const REFRESH_MS = 60000
 
 /** Registration-side face used by the section. */
 export interface BalanceSectionInjected {
   /** Consulta el saldo; nunca lanza, devuelve el resultado estructurado. */
   refresh: () => Promise<BalanceResult>
+  /** Consulta el uso por modelo acumulado; `null` si la consulta Remote falla. */
+  refreshUsage: () => Promise<ModelUsageView | null>
   /** Programa una llamada periódica y devuelve su disposer; `undefined` sin servicio de timer. */
   interval: (callback: () => void, ms: number) => (() => void) | undefined
 }
@@ -18,20 +22,28 @@ export interface BalanceSectionInjected {
 export type BalanceSectionProps =
   PropsRuntime<'settings.section'> & InjectFace<BalanceSectionInjected>
 
-/** Section state: the last readout survives refresh failures. */
+/** Balance state: the last readout survives refresh failures. */
 interface UiState {
   readonly status: 'loading' | 'ok' | 'error'
   readonly data: BalanceView | null
   readonly error: string | null
 }
 
+/** Usage state: last view survives refresh failures; `failed` marks a Remote error. */
+interface UsageState {
+  readonly data: ModelUsageView | null
+  readonly failed: boolean
+}
+
 /**
- * Account balance page for the DeepSeek account: per-currency rows, manual
- * refresh, and a one-minute auto-refresh while the page is open. Copy is
- * Spanish by user decision (see README "Copy language").
+ * Account dashboard page for the DeepSeek account: per-currency balance cards,
+ * a per-model usage card accumulated from `llm/stream`, manual refresh, and a
+ * one-minute auto-refresh while the page is open. Copy is Spanish by user
+ * decision (see README "Copy language").
  */
 export function BalanceSection(props: BalanceSectionProps): ReactElement {
   const [state, setState] = useState<UiState>({ status: 'loading', data: null, error: null })
+  const [usage, setUsage] = useState<UsageState>({ data: null, failed: false })
 
   function load(): void {
     void props.refresh().then((result) => {
@@ -47,14 +59,25 @@ export function BalanceSection(props: BalanceSectionProps): ReactElement {
     })
   }
 
+  function loadUsage(): void {
+    void props.refreshUsage().then((view) => {
+      setUsage(prev => ({ data: view ?? prev.data, failed: view === null }))
+    })
+  }
+
   useEffect(() => {
     load()
-    return props.interval(load, REFRESH_MS)
+    loadUsage()
+    return props.interval(() => {
+      load()
+      loadUsage()
+    }, REFRESH_MS)
   }, [])
 
   function refreshNow(): void {
     setState(prev => ({ status: 'loading', data: prev.data, error: null }))
     load()
+    loadUsage()
   }
 
   const data = state.data
@@ -112,6 +135,51 @@ export function BalanceSection(props: BalanceSectionProps): ReactElement {
       </div>
       {state.error !== null && <p className={css.error}>{state.error}</p>}
       {body}
+      <ModelUsageCard usage={usage} />
+    </div>
+  )
+}
+
+/**
+ * Per-model usage card fed by the Host accumulator: one row per
+ * `provider/model` route with call and token totals since the process start.
+ */
+function ModelUsageCard(props: { usage: UsageState }): ReactElement {
+  const view = props.usage.data
+  return (
+    <div>
+      <div className={css.usageHeader}>
+        <span className={css.title}>Uso por modelo</span>
+        {view !== null && (
+          <span className={css.updated}>Desde {formatTime(view.since)}</span>
+        )}
+      </div>
+      {props.usage.failed && (
+        <p className={css.error}>No se pudo consultar el uso por modelo.</p>
+      )}
+      {view !== null && view.models.length === 0 && (
+        <p className={css.note}>Aún no hay llamadas registradas en este proceso.</p>
+      )}
+      {view !== null && view.models.length > 0 && (
+        <div>
+          {view.models.map(row => (
+            <div className={css.row} key={`${row.provider}-${row.model}`}>
+              <div className={css.currency}>{row.model}</div>
+              <div className={css.sub}>
+                {row.calls} llamada{row.calls === 1 ? '' : 's'}
+                {' · '}
+                Input {formatNumber(row.inputTokens)}
+                {' · '}
+                Cache {formatNumber(row.cacheReadTokens)}
+                {' · '}
+                Output {formatNumber(row.outputTokens)}
+                {row.reasoningTokens > 0 ? ` · Raz. ${formatNumber(row.reasoningTokens)}` : ''}
+              </div>
+            </div>
+          ))}
+          <p className={css.updated}>Tokens acumulados desde el inicio del proceso.</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -143,4 +211,9 @@ function formatTime(iso: string): string {
     /* v8 ignore next -- defensive: new Date(string) never throws; parse failure yields Invalid Date handled above */
     return iso
   }
+}
+
+/** Render a token count with locale grouping. */
+function formatNumber(value: number): string {
+  return value.toLocaleString()
 }

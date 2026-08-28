@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-A remote-only Host service (`ctx.balance`) that reads the DeepSeek account balance from [`GET /user/balance`](https://api-docs.deepseek.com/api/get-user-balance) and exposes it to the browser as the `balance` Remote namespace (`api.balance.getBalance()` through the typert gateway).
+A remote-only Host service (`ctx.balance`) that reads the DeepSeek account balance from [`GET /user/balance`](https://api-docs.deepseek.com/api/get-user-balance), accumulates process-lifetime per-model usage from every `llm/stream` call, and exposes both to the browser as the `balance` Remote namespace (`api.balance.getBalance()` / `api.balance.getModelUsage()` through the typert gateway).
 
 The service resolves the harness `DEEPSEEK_API_KEY` credential for **each** call through the optional `ctx.credentials` seam (process environment, provider-managed store, and `.env` files), falling back to the launch environment when the seam is absent — the same key the DeepSeek LLM adapter uses, so no new secret is required. A key stored or rotated on the Web Models page reaches the next query without a restart.
 
@@ -29,6 +29,10 @@ The endpoint returns one `balance_infos[]` entry per currency:
 | `topped_up_balance` | `toppedUpBalance` |
 
 Amounts are decimal **strings** and are forwarded unparsed, so no float precision is lost. `is_available` maps to `BalanceView.isAvailable`, and every successful call stamps `fetchedAt` with the host time of the response. Failures use the `BalanceResult` union (`ok`/`data`/`error`/`detail`) with stable `BalanceErrorCode` values: `credential-error`, `no-api-key`, `request-failed`, and `bad-response`.
+
+## Per-model usage
+
+A global `llm/stream` waterfall listener wraps every streamed model call and folds the reported `usage` chunk (`inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `reasoningTokens`) into an in-memory accumulator keyed by `provider/model`. `getModelUsage()` serves the snapshot (one `ModelUsageRow` per route plus `since`); the accumulator is process-lifetime and resets with the harness process.
 
 ## Model Experience
 

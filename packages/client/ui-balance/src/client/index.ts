@@ -7,7 +7,7 @@
  * (user-owned feature; see README "Copy language").
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { BalanceResult } from '@deepseek-ai/dsh-api-remotes/client'
+import type { BalanceResult, ModelUsageView } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the shell's SlotMap merge (the 'settings.section' entry).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the ctx.remote merge (the balance namespace) into this program.
@@ -36,6 +36,10 @@ export function apply(ctx: ClientContext): void {
     }
     return result.value
   }
+  const refreshUsage = async (): Promise<ModelUsageView | null> => {
+    const result = await ctx.remote.balance.getModelUsage()
+    return result.ok ? result.value : null
+  }
   const interval = (callback: () => void, ms: number): (() => void) | undefined =>
     timer?.interval(callback, ms)
   ctx.slots.inject('settings.section', () => ctx.slots.register({
@@ -43,6 +47,6 @@ export function apply(ctx: ClientContext): void {
     id: 'deepseek-balance',
     order: 30,
     label: () => 'Saldo DeepSeek',
-    inject: (): BalanceSectionInjected => ({ refresh, interval }),
+    inject: (): BalanceSectionInjected => ({ refresh, refreshUsage, interval }),
   }, BalanceSection))
 }

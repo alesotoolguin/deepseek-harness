@@ -6,7 +6,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as applyHost } from '../src/index.ts'
 import { BalanceSection, type BalanceSectionInjected } from '../src/client/BalanceSection.tsx'
-import type { BalanceResult } from '@deepseek-ai/dsh-api-remotes/client'
+import type { BalanceResult, ModelUsageView } from '@deepseek-ai/dsh-api-remotes/client'
 
 afterEach(cleanup)
 
@@ -17,6 +17,11 @@ const RESULT: BalanceResult = {
   data: { isAvailable: true, currencies: [], fetchedAt: '2026-01-01T10:00:00.000Z' },
 }
 
+const USAGE: ModelUsageView = {
+  since: '2026-01-01T10:00:00.000Z',
+  models: [],
+}
+
 type Result<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
@@ -25,6 +30,7 @@ async function bench(): Promise<{
   ctx: Context
   slots: SlotRegistry
   getBalance: ReturnType<typeof vi.fn>
+  getModelUsage: ReturnType<typeof vi.fn>
   interval: ReturnType<typeof vi.fn>
 }> {
   const ctx = new Context()
@@ -37,10 +43,12 @@ async function bench(): Promise<{
   new RemoteService(ctx)
   const getBalance = vi.fn<() => Promise<Result<BalanceResult>>>()
     .mockResolvedValue({ ok: true, value: RESULT })
-  ctx.provide('remote.balance', { getBalance })
+  const getModelUsage = vi.fn<() => Promise<Result<ModelUsageView>>>()
+    .mockResolvedValue({ ok: true, value: USAGE })
+  ctx.provide('remote.balance', { getBalance, getModelUsage })
   const interval = vi.fn(() => () => {})
   ctx.provide('timer', { interval })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, getBalance, interval }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, getBalance, getModelUsage, interval }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -71,10 +79,13 @@ describe('ui-balance browser plugin', () => {
     expect(section.options).toMatchObject({ id: 'deepseek-balance', order: 30 })
     expect((section.options.label as () => string)()).toBe('Saldo DeepSeek')
     expect(b.getBalance).not.toHaveBeenCalled()
+    expect(b.getModelUsage).not.toHaveBeenCalled()
 
     const injected = (section.inject as unknown as () => BalanceSectionInjected)()
     await expect(injected.refresh()).resolves.toEqual(RESULT)
     expect(b.getBalance).toHaveBeenCalledTimes(1)
+    await expect(injected.refreshUsage()).resolves.toEqual(USAGE)
+    expect(b.getModelUsage).toHaveBeenCalledTimes(1)
 
     const stop = injected.interval(() => {}, 123)
     expect(b.interval).toHaveBeenCalledWith(expect.any(Function), 123)
@@ -98,6 +109,19 @@ describe('ui-balance browser plugin', () => {
       detail: 'boom',
       data: null,
     })
+
+    await b.ctx.fiber.dispose()
+  })
+
+  it('maps a Remote failure for usage to null', async () => {
+    const b = await bench()
+    b.getModelUsage.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'boom' } })
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+
+    const section = b.slots.entries('settings.section')[0]!
+    const injected = (section.inject as unknown as () => BalanceSectionInjected)()
+    await expect(injected.refreshUsage()).resolves.toBeNull()
 
     await b.ctx.fiber.dispose()
   })

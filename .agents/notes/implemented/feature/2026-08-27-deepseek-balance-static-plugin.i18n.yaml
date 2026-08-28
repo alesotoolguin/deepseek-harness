@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-27-deepseek-balance-static-plugin.md
-2026-08-27-deepseek-balance-static-plugin.md: e98de396a87c1015600e1a5898d8525c1e694516
-2026-08-27-deepseek-balance-static-plugin.zh.md: f152d0b203778adef8edddbc1496f4e0d9fc6e7d
+2026-08-27-deepseek-balance-static-plugin.md: 6a2dd48145f175c005166bb0071fe8151ed98215
+2026-08-27-deepseek-balance-static-plugin.zh.md: 13cfcb224609bfee9de0fa1bfdb0b385b9790fe7

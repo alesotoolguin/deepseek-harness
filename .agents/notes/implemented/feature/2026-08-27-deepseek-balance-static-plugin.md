@@ -15,6 +15,10 @@ Ship the viewer as two static packages mounted in the `dsh-web-app` bundle:
 - `@deepseek-ai/dsh-web-balance` — a Host service (`ctx.balance`) extending `TypertRemoteService` with one `@Remote('getBalance')` method, publishing the `balance` Remote namespace. It resolves `DEEPSEEK_API_KEY` per call through the optional `ctx.credentials` seam (falling back to the launch environment), then calls `GET https://api.deepseek.com/user/balance` with native `fetch`, `redirect: 'error'` (credential-bearing requests must fail on redirect), a 15s `AbortSignal.timeout`, and a 64KiB response bound. The key never leaves the Host and never appears in a failure detail.
 - `@deepseek-ai/dsh-client-ui-balance` — the browser half registering the `settings.section` page `deepseek-balance` (order 30, label **Saldo DeepSeek**), rendering one card per reported currency (total, granted, topped-up), a manual refresh button, the last-update time, and a 60-second auto-refresh while the page is open. A failed refresh keeps the last readout visible beside the error banner.
 
+### Per-model usage accumulation
+
+A global `llm/stream` waterfall listener wraps every streamed model call and folds the reported `usage` chunk into an in-memory accumulator keyed by `provider/model`; the `balance/getModelUsage` Remote serves the process-lifetime snapshot (calls plus input/output/cache-read/cache-write/reasoning tokens per route). The browser section renders it as a second card under the balance. Timing metrics (LLM wall time, TTFT, tok/s) stay session-level in the `session-stats` projection and are not per-model.
+
 ### RPC and assembly
 
 The client calls `ctx.remote.balance.getBalance()` through the typert gateway; `packages/api/remotes` imports the generated `@deepseek-ai/dsh-web-balance/remote` contribution, mounts it, and re-exports the domain's client-safe types. The Host method returns a **flat** `BalanceResult` (`ok`/`data`/`error`/`detail`) with stable `BalanceErrorCode` values (`credential-error`, `no-api-key`, `request-failed`, `bad-response`); a flat object was chosen over a discriminated union to keep the generated zod codec trivially simple.

@@ -12,6 +12,12 @@
   gap: 12px;
 }
 
+.usageHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .title {
   font-size: 14px;
   font-weight: 600;

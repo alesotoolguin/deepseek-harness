@@ -9,7 +9,8 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import TypertRegistry, { type TypertContribution } from '@deepseek-ai/dsh-typert-registry'
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
 import BalanceService from '../src/index.ts'
-import type { BalanceResult } from '../src/types.ts'
+import type { BalanceResult, ModelUsageView } from '../src/types.ts'
+import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 
 let root: string | undefined
 let context: Context | undefined
@@ -124,5 +125,57 @@ describe('web-balance real Loader composition through cordis.yml', () => {
     }) as BalanceResult
 
     expect(result).toEqual({ ok: false, error: 'no-api-key', detail: '', data: null })
+  })
+
+  it('serves per-model usage accumulated from llm/stream through the gateway', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-balance-loader-'))
+    const configPath = join(root, 'cordis.yml')
+    await writeFile(configPath, [
+      "- name: '@deepseek-ai/dsh-web-balance'",
+      '',
+    ].join('\n'))
+
+    context = new Context()
+    context.baseUrl = pathToFileURL(root).href + '/'
+    await context.plugin(TypertRegistry)
+    await context.plugin(TypertGatewayService)
+    await context.plugin(Loader)
+    context.loader.builtins.include = Include
+    context.loader.internal = {
+      version: 'v2',
+      async import(specifier: string) {
+        if (specifier !== '@deepseek-ai/dsh-web-balance') throw new Error(`unexpected Loader import: ${specifier}`)
+        return BalanceService
+      },
+    } as unknown as NonNullable<typeof context.loader.internal>
+    await context.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
+    await context.loader.await()
+
+    const manifest = (await import('../lib/typert.host.js')).TYPERT
+    context.typert.register(manifest as TypertContribution)
+
+    const stream = context.waterfall('llm/stream', { provider: 'deepseek', model: 'deepseek-v4-pro' } as GenerateOptions, () =>
+      (async function* () {
+        yield { type: 'text-delta', index: 0, text: 'x' }
+        yield { type: 'usage', usage: { inputTokens: 4, outputTokens: 2 } }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })())
+    // Drenar el stream: el wrapper es un generador perezoso.
+    for await (const _ of stream) void _
+
+    const usage = await context.typertGateway.invoke({
+      namespace: 'balance',
+      method: 'getModelUsage',
+      args: {},
+    }) as ModelUsageView
+
+    expect(usage.models).toHaveLength(1)
+    expect(usage.models[0]).toMatchObject({
+      provider: 'deepseek',
+      model: 'deepseek-v4-pro',
+      calls: 1,
+      inputTokens: 4,
+      outputTokens: 2,
+    })
   })
 })

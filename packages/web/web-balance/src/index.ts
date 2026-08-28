@@ -8,10 +8,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
+import type { GenerateOptions, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
-import type { BalanceCurrencyView, BalanceResult, BalanceView } from './types.ts'
+import type {
+  BalanceCurrencyView, BalanceResult, BalanceView, ModelUsageRow, ModelUsageView,
+} from './types.ts'
 
 export type * from './types.ts'
 
@@ -28,13 +31,29 @@ const MAX_RESPONSE_BYTES = 65536
 const REQUEST_TIMEOUT_MS = 15000
 
 /**
- * Remote-only service exposing the account balance to the browser. The key is
- * resolved per call (a rotated credential reaches the next query without a
- * restart) and never leaves the Host.
+ * Remote-only service exposing the account balance and process-lifetime
+ * per-model usage to the browser. The key is resolved per call (a rotated
+ * credential reaches the next query without a restart) and never leaves the
+ * Host.
  */
 export class BalanceService extends TypertRemoteService {
+  /** Per-model usage accumulator fed by every `llm/stream` call. */
+  private readonly usage = new ModelUsageAccumulator()
+
   constructor(ctx: Context) {
     super(ctx, 'balance')
+    ctx.on('llm/stream', (options: GenerateOptions, next): AsyncIterable<StreamChunk> => {
+      return captureUsage(next(), this.usage, options.provider, options.model)
+    }, { global: true })
+  }
+
+  /**
+   * Read the per-model usage accumulated since this process started.
+   * @returns one row per `provider/model` route with call and token totals.
+   */
+  @Remote('getModelUsage')
+  getModelUsage(): ModelUsageView {
+    return this.usage.view()
   }
 
   /**
@@ -159,4 +178,71 @@ async function errorDetail(response: Response): Promise<string> {
 /** One-line, secret-free rendering of an arbitrary error. */
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * In-memory per-route usage accumulator. Rows are JSON-safe leaf values
+ * ordered by first call; totals fold every reported `usage` chunk.
+ */
+class ModelUsageAccumulator {
+  private readonly rows = new Map<string, ModelUsageRow>()
+  private readonly startedAt = new Date().toISOString()
+
+  /** Fold one call's reported usage into its `provider/model` row. */
+  add(provider: string, model: string, usage: TokenUsage): void {
+    const key = `${provider}\u0000${model}`
+    const now = new Date().toISOString()
+    const current = this.rows.get(key)
+    if (current === undefined) {
+      this.rows.set(key, {
+        provider,
+        model,
+        calls: 1,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens ?? 0,
+        cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+        reasoningTokens: usage.reasoningTokens ?? 0,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      })
+      return
+    }
+    this.rows.set(key, {
+      ...current,
+      calls: current.calls + 1,
+      inputTokens: current.inputTokens + usage.inputTokens,
+      outputTokens: current.outputTokens + usage.outputTokens,
+      cacheReadTokens: current.cacheReadTokens + (usage.cacheReadTokens ?? 0),
+      cacheWriteTokens: current.cacheWriteTokens + (usage.cacheWriteTokens ?? 0),
+      reasoningTokens: current.reasoningTokens + (usage.reasoningTokens ?? 0),
+      lastSeenAt: now,
+    })
+  }
+
+  /** Snapshot the accumulated rows ordered by first call. */
+  view(): ModelUsageView {
+    return {
+      since: this.startedAt,
+      models: [...this.rows.values()],
+    }
+  }
+}
+
+/**
+ * Re-yield the delegated stream, folding each `usage` chunk into the
+ * accumulator for the call's `provider/model` route. The waterfall contract
+ * holds: `next()` is always delegated, so downstream listeners still see
+ * every chunk.
+ */
+async function* captureUsage(
+  stream: AsyncIterable<StreamChunk>,
+  accumulator: ModelUsageAccumulator,
+  provider: string,
+  model: string,
+): AsyncIterable<StreamChunk> {
+  for await (const chunk of stream) {
+    if (chunk.type === 'usage') accumulator.add(provider, model, chunk.usage)
+    yield chunk
+  }
 }
