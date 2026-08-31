@@ -7,10 +7,10 @@
  * a key is entered; a blank key materializes a reference-free profile for
  * provider-native authentication);
  * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
- * both families, DeepSeek's id/name/context-window model catalog, and the
- * display name and wire protocol of a pi-ai route the adapter does not ship —
- * the two fields the create card asked that route for, editable here for the
- * same reason).
+ * every family, DeepSeek's and opencode-go's id/name/context-window model
+ * catalogs, and the display name and wire protocol of a pi-ai route the
+ * adapter does not ship — the two fields the create card asked that route
+ * for, editable here for the same reason).
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
  * the models under one provider disagree about it, so a provider-scoped
  * control can only be set to a value some of them reject. The composer's
@@ -36,10 +36,13 @@ import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
-type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+type EditorLayout = 'deepseek' | 'pi-ai' | 'opencode-go' | 'unknown'
 
 /** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
+
+/** The public opencode-go gateway shown as the opencode-go base-URL placeholder. */
+const OPENCODE_GO_PUBLIC_BASE_URL = 'https://opencode.ai/zen/go/v1'
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
@@ -129,6 +132,7 @@ export function pathOps(
 function layoutOf(ns: string): EditorLayout {
   if (ns === 'llm-deepseek') return 'deepseek'
   if (ns === 'llm-pi-ai') return 'pi-ai'
+  if (ns === 'opencode-go-direct') return 'opencode-go'
   return 'unknown'
 }
 
@@ -342,7 +346,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    * narrowed so the per-family branches below are total: an unknown namespace
    * renders the hint instead and never reaches this body.
    */
-  const curatedFields = (family: 'deepseek' | 'pi-ai'): ReactNode => {
+  const curatedFields = (family: 'deepseek' | 'pi-ai' | 'opencode-go'): ReactNode => {
     // What a hand-declared route names for itself and nothing else can supply.
     // A whole-section `llm-deepseek` profile is a composition fact with no
     // per-route identity for its schema to carry, hence the family test.
@@ -357,7 +361,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       : keyState?.configured === true && props.credentialRequired !== true
         ? t('keyStored')
         : family === 'pi-ai' ? t('keyPlaceholderNative') : t('keyPlaceholder')
-    /** What both family editors take: the rows, whose layer owns them, and the two writes. */
+    /** What every family editor takes: the rows, whose layer owns them, and the two writes. */
     const catalogProps = {
       models,
       overridden: modelsOverridden,
@@ -425,7 +429,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 value={stringAt(draft, 'baseURL') ?? ''}
                 placeholder={family === 'deepseek'
                   ? DEEPSEEK_PUBLIC_BASE_URL
-                  : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
+                  : family === 'opencode-go'
+                    ? OPENCODE_GO_PUBLIC_BASE_URL
+                    : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
                 aria-label={t('baseUrl')}
                 disabled={disabled}
                 onChange={(event) => {
@@ -461,7 +467,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's
                 endpoint interrogation. */}
-            {family === 'deepseek'
+            {family === 'deepseek' || family === 'opencode-go'
               ? (
                 <DeepSeekModelsEditor
                   {...catalogProps}
