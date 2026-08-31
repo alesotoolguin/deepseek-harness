@@ -43,9 +43,6 @@
       "path": "../../host/plugin-inventory"
     },
     {
-      "path": "../../host/git-branch"
-    },
-    {
       "path": "../../interaction/commands"
     },
     {
@@ -74,9 +71,6 @@
     },
     {
       "path": "../workspace-controller/tsconfig.client.json"
-    },
-    {
-      "path": "../../web/web-balance"
     },
     {
       "path": "../../typert/protocol"
