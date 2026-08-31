@@ -1,12 +1,8 @@
 // @vitest-environment jsdom
-import { Context, Service } from '@deepseek-ai/cordis'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup } from '@testing-library/react'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { describe, expect, it, vi } from 'vitest'
+import { SlotTestRuntime, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject } from '../src/client/index.ts'
 import { GitBranchPicker, type GitBranchPickerInjected } from '../src/client/GitBranchPicker.tsx'
-
-afterEach(cleanup)
 
 const BRANCH = { branch: 'main', repo: '/repo' }
 const LIST = { repo: '/repo', branches: ['main'] }
@@ -16,14 +12,7 @@ type Result<T> =
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
 async function bench() {
-  const ctx = new Context()
-  await ctx.plugin(SlotRegistry).await()
-  class RemoteService extends Service {
-    constructor(serviceCtx: Context) {
-      super(serviceCtx, 'remote')
-    }
-  }
-  new RemoteService(ctx)
+  const runtime = await SlotTestRuntime.create()
   const branch = vi.fn<() => Promise<Result<typeof BRANCH>>>()
     .mockResolvedValue({ ok: true, value: BRANCH })
   const list = vi.fn<() => Promise<Result<typeof LIST>>>()
@@ -34,17 +23,14 @@ async function bench() {
     .mockResolvedValue({ ok: true, value: 'feature-x' })
   const checkout = vi.fn<() => Promise<Result<string>>>()
     .mockResolvedValue({ ok: true, value: 'release' })
-  ctx.provide('remote.gitBranch', { branch, list, status, create, checkout })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, branch, list, status, create, checkout }
+  new TestRemote(runtime.ctx, { gitBranch: { branch, list, status, create, checkout } })
+  return { runtime, branch, list, status, create, checkout }
 }
 
-function declare(slots: SlotRegistry): () => void {
-  return slots.register({
-    name: 'root',
-    children: {
-      'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
-      'conversation.hero.workspace.utilities': { kind: 'list', scope: 'session' },
-    },
+function declare(runtime: SlotTestRuntime): Promise<void> {
+  return runtime.root.declare({
+    'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+    'conversation.hero.workspace.utilities': { kind: 'list', scope: 'session-maybe' },
   } as never, () => null)
 }
 
@@ -55,11 +41,11 @@ describe('ui-git-branch browser plugin', () => {
 
   it('registers the header and hero pickers without reading the Remote eagerly', async () => {
     const b = await bench()
-    declare(b.slots)
-    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    await declare(b.runtime)
+    const feature = await b.runtime.mount({ inject: [...inject], apply })
 
-    const header = b.slots.entries('conversation.session.header.utilities')[0]!
-    const hero = b.slots.entries('conversation.hero.workspace.utilities')[0]!
+    const header = b.runtime.slots.entries('conversation.session.header.utilities')[0]!
+    const hero = b.runtime.slots.entries('conversation.hero.workspace.utilities')[0]!
     expect(header.component).toBe(GitBranchPicker)
     expect(header.options).toMatchObject({ id: 'git-branch-picker', order: 10 })
     expect(hero.component).toBe(GitBranchPicker)
@@ -107,34 +93,34 @@ describe('ui-git-branch browser plugin', () => {
       ok: false,
       message: 'unavailable',
     })
-    await b.ctx.fiber.dispose()
+    await feature.dispose()
+    await b.runtime.dispose()
   })
 
   it('recovers across late declaration and declarer reload', async () => {
     const b = await bench()
-    const fiber = b.ctx.plugin({ inject: [...inject], apply })
-    await fiber.await()
-    expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
-    expect(b.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(0)
+    const feature = await b.runtime.mount({ inject: [...inject], apply })
+    expect(b.runtime.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.runtime.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(0)
 
-    const stop = declare(b.slots)
+    await declare(b.runtime)
     await vi.waitFor(() => {
-      expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(1)
-      expect(b.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(1)
+      expect(b.runtime.slots.entries('conversation.session.header.utilities')).toHaveLength(1)
+      expect(b.runtime.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(1)
     })
 
-    stop()
-    expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
-    expect(b.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(0)
-    declare(b.slots)
+    b.runtime.root.release()
+    expect(b.runtime.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.runtime.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(0)
+    await declare(b.runtime)
     await vi.waitFor(() => {
-      expect(b.slots.entries('conversation.session.header.utilities')[0]?.component).toBe(GitBranchPicker)
-      expect(b.slots.entries('conversation.hero.workspace.utilities')[0]?.component).toBe(GitBranchPicker)
+      expect(b.runtime.slots.entries('conversation.session.header.utilities')[0]?.component).toBe(GitBranchPicker)
+      expect(b.runtime.slots.entries('conversation.hero.workspace.utilities')[0]?.component).toBe(GitBranchPicker)
     })
 
-    await fiber.dispose()
-    expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
-    expect(b.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(0)
-    await b.ctx.fiber.dispose()
+    await feature.dispose()
+    expect(b.runtime.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.runtime.slots.entries('conversation.hero.workspace.utilities')).toHaveLength(0)
+    await b.runtime.dispose()
   })
 })

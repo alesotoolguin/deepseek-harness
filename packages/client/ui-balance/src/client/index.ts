@@ -6,10 +6,12 @@
  * Export discipline: packages/client/AGENTS.md. Copy is deliberately Spanish
  * (user-owned feature; see README "Copy language").
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { BalanceResult, ModelUsageView } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the shell's SlotMap merge (the 'settings.section' entry).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// Type-only: pulls the renderer's Context merge (ctx.slots) into this program.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ctx.remote merge (the balance namespace) into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { BalanceSection, type BalanceSectionInjected } from './BalanceSection.tsx'

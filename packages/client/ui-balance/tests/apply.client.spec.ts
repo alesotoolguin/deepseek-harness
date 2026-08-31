@@ -1,14 +1,10 @@
 // @vitest-environment jsdom
-import { Context, Service } from '@deepseek-ai/cordis'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup } from '@testing-library/react'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { describe, expect, it, vi } from 'vitest'
+import { SlotTestRuntime, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as applyHost } from '../src/index.ts'
 import { BalanceSection, type BalanceSectionInjected } from '../src/client/BalanceSection.tsx'
 import type { BalanceResult, ModelUsageView } from '@deepseek-ai/dsh-api-remotes/client'
-
-afterEach(cleanup)
 
 const RESULT: BalanceResult = {
   ok: true,
@@ -27,36 +23,25 @@ type Result<T> =
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
 async function bench(): Promise<{
-  ctx: Context
-  slots: SlotRegistry
+  runtime: SlotTestRuntime
   getBalance: ReturnType<typeof vi.fn>
   getModelUsage: ReturnType<typeof vi.fn>
   interval: ReturnType<typeof vi.fn>
 }> {
-  const ctx = new Context()
-  await ctx.plugin(SlotRegistry).await()
-  class RemoteService extends Service {
-    constructor(serviceCtx: Context) {
-      super(serviceCtx, 'remote')
-    }
-  }
-  new RemoteService(ctx)
+  const runtime = await SlotTestRuntime.create()
   const getBalance = vi.fn<() => Promise<Result<BalanceResult>>>()
     .mockResolvedValue({ ok: true, value: RESULT })
   const getModelUsage = vi.fn<() => Promise<Result<ModelUsageView>>>()
     .mockResolvedValue({ ok: true, value: USAGE })
-  ctx.provide('remote.balance', { getBalance, getModelUsage })
+  new TestRemote(runtime.ctx, { balance: { getBalance, getModelUsage } })
   const interval = vi.fn(() => () => {})
-  ctx.provide('timer', { interval })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, getBalance, getModelUsage, interval }
+  runtime.ctx.provide('timer', { interval })
+  return { runtime, getBalance, getModelUsage, interval }
 }
 
-function declare(slots: SlotRegistry): () => void {
-  return slots.register({
-    name: 'root',
-    children: {
-      'settings.section': { kind: 'list', scope: 'root' },
-    },
+async function declare(runtime: SlotTestRuntime): Promise<void> {
+  await runtime.root.declare({
+    'settings.section': { kind: 'list', scope: 'root' },
   } as never, () => null)
 }
 
@@ -71,10 +56,10 @@ describe('ui-balance browser plugin', () => {
 
   it('registers the settings section without reading the Remote eagerly', async () => {
     const b = await bench()
-    declare(b.slots)
-    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    await declare(b.runtime)
+    const feature = await b.runtime.mount({ inject: [...inject], apply })
 
-    const section = b.slots.entries('settings.section')[0]!
+    const section = b.runtime.slots.entries('settings.section')[0]!
     expect(section.component).toBe(BalanceSection)
     expect(section.options).toMatchObject({ id: 'deepseek-balance', order: 30 })
     expect((section.options.label as () => string)()).toBe('Saldo DeepSeek')
@@ -91,17 +76,18 @@ describe('ui-balance browser plugin', () => {
     expect(b.interval).toHaveBeenCalledWith(expect.any(Function), 123)
     expect(typeof stop).toBe('function')
 
-    await b.ctx.fiber.dispose()
-    expect(b.slots.entries('settings.section')).toHaveLength(0)
+    await feature.dispose()
+    expect(b.runtime.slots.entries('settings.section')).toHaveLength(0)
+    await b.runtime.dispose()
   })
 
   it('maps a Remote failure to the structured balance failure', async () => {
     const b = await bench()
     b.getBalance.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'boom' } })
-    declare(b.slots)
-    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    await declare(b.runtime)
+    const feature = await b.runtime.mount({ inject: [...inject], apply })
 
-    const section = b.slots.entries('settings.section')[0]!
+    const section = b.runtime.slots.entries('settings.section')[0]!
     const injected = (section.inject as unknown as () => BalanceSectionInjected)()
     await expect(injected.refresh()).resolves.toEqual({
       ok: false,
@@ -110,19 +96,21 @@ describe('ui-balance browser plugin', () => {
       data: null,
     })
 
-    await b.ctx.fiber.dispose()
+    await feature.dispose()
+    await b.runtime.dispose()
   })
 
   it('maps a Remote failure for usage to null', async () => {
     const b = await bench()
     b.getModelUsage.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'boom' } })
-    declare(b.slots)
-    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    await declare(b.runtime)
+    const feature = await b.runtime.mount({ inject: [...inject], apply })
 
-    const section = b.slots.entries('settings.section')[0]!
+    const section = b.runtime.slots.entries('settings.section')[0]!
     const injected = (section.inject as unknown as () => BalanceSectionInjected)()
     await expect(injected.refreshUsage()).resolves.toBeNull()
 
-    await b.ctx.fiber.dispose()
+    await feature.dispose()
+    await b.runtime.dispose()
   })
 })

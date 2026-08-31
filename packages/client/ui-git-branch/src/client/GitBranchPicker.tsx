@@ -34,7 +34,8 @@ export interface GitBranchPickerInjected {
 
 /** Full component props assembled by either the header utilities or the hero row renderer. */
 export type GitBranchPickerProps =
-  PropsRuntime<'conversation.session.header.utilities' | 'conversation.hero.workspace.utilities'>
+  (PropsRuntime<'conversation.session.header.utilities'>
+    | PropsRuntime<'conversation.hero.workspace.utilities'>)
   & InjectFace<GitBranchPickerInjected>
 
 /** One in-flight branch action, or null when idle. */
@@ -49,12 +50,12 @@ type BusyAction = 'create' | 'checkout' | null
 export function GitBranchPicker(props: GitBranchPickerProps): ReactElement | null {
   const sessionId = props.useSession(s => s.sessionId)
   const blank = props.useSession(s => s.blank)
-  const cwd = props.useSessions(s => s.byId[sessionId]?.cwd)
+  const cwd = props.useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
   // A blank session has no cwd until its first run starts; the workspace it
   // is connected to carries the same directory, so the picker resolves that
   // path and shows the branch immediately after the workspace is picked.
   const workspacePath = props.useWorkspaces(s =>
-    s.items.find(w => w.sessionIds.includes(sessionId))?.path,
+    sessionId === undefined ? undefined : s.items.find(w => w.sessionIds.includes(sessionId))?.path,
   )
   const root = cwd ?? workspacePath
   const [result, setResult] = useState<GitBranchResult | null>(null)

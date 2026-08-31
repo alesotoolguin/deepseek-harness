@@ -1,7 +1,9 @@
 /** Browser plugin rendering the git-branch picker of the active session's workspace. */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls the renderer's Context merge (ctx.slots) into this program.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import {
   GitBranchPicker,
   type GitBranchActionOutcome,
