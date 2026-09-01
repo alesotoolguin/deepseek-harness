@@ -387,6 +387,48 @@ describe('model list editing', () => {
       .toEqual([{ id: 'm', contextWindow: 1_000_000, maxTokens: 1000 }])
   })
 
+  it('toggles input modalities and commits reasoning levels per model', async () => {
+    const { mutate } = await mountSection()
+    openEditor('openai')
+
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'vision' } })
+    expandModel(1)
+
+    // Modality chips start unset; toggling text then image stores both.
+    fireEvent.click(screen.getByRole('button', { name: `${en.inputModalities} text` }))
+    fireEvent.click(screen.getByRole('button', { name: `${en.inputModalities} image` }))
+
+    // Reasoning levels are free tags: Enter and comma both commit a draft.
+    const reasoningInput = screen.getByLabelText(`${en.reasoning} 1`)
+    fireEvent.change(reasoningInput, { target: { value: 'off' } })
+    fireEvent.keyDown(reasoningInput, { key: 'Enter' })
+    fireEvent.change(reasoningInput, { target: { value: 'max' } })
+    fireEvent.keyDown(reasoningInput, { key: ',' })
+
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value)
+      .toEqual([{ id: 'vision', inputModalities: ['text', 'image'], reasoning: ['off', 'max'] }])
+  })
+
+  it('drops the reasoning field when the last level is removed', async () => {
+    const { mutate } = await mountSection({
+      providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'm', reasoning: ['off', 'high'] }] } },
+    })
+    openEditor('openai')
+    expandModel(1)
+
+    fireEvent.click(screen.getByRole('button', { name: `${en.removeReasoningLevel} off` }))
+    fireEvent.click(screen.getByRole('button', { name: `${en.removeReasoningLevel} high` }))
+
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    // An emptied optional field leaves the profile rather than storing a list
+    // the adapter would read as "no reasoning".
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'm' }])
+  })
+
   it('refuses to apply while a capacity is unreadable', async () => {
     const { mutate } = await mountSection()
     openEditor('openai')

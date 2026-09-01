@@ -42,6 +42,23 @@ function numberOf(model: ModelDraft, key: string): number | undefined {
   return typeof value === 'number' ? value : undefined
 }
 
+/** A row's string-array field, or `undefined` when unset or not an array of strings. */
+function stringListOf(model: ModelDraft, key: string): string[] | undefined {
+  const value = model[key]
+  return Array.isArray(value) && value.every(entry => typeof entry === 'string')
+    ? value
+    : undefined
+}
+
+/** The harness's merge-extensible modality vocabulary; a model's own values join as extra chips. */
+const MODALITY_CHOICES: readonly string[] = ['text', 'image']
+
+/** Chips offered for one row: the known vocabulary plus any stored values outside it. */
+function modalityChoices(model: ModelDraft): string[] {
+  const present = stringListOf(model, 'inputModalities') ?? []
+  return [...MODALITY_CHOICES, ...present.filter(entry => !MODALITY_CHOICES.includes(entry))]
+}
+
 /** What an interrogation needs, taken from the live form. */
 export interface ProbeTarget {
   /** Settings namespace whose adapter family answers. */
@@ -172,6 +189,9 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   // FIELD: a single buffer would be displaced by editing any other field, and
   // the abandoned one would render its stored NaN as the literal `NaN`.
   const [editing, setEditing] = useState<ReadonlyMap<string, string>>(new Map())
+  // Reasoning levels are edited as free tags; one row's pending text is held
+  // here so keystrokes survive re-renders, and dropped on commit or blur.
+  const [tagDraft, setTagDraft] = useState<ReadonlyMap<number, string>>(new Map())
 
   /** Buffer key for one capacity field; the row half moves when rows do. */
   const bufferKey = (index: number, field: CapacityField): string => `${String(index)}:${field}`
@@ -184,6 +204,41 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   /** What a capacity field shows: the buffer while typing, else the stored count. */
   const capacityText = (model: ModelDraft, index: number, field: CapacityField): string =>
     editing.get(bufferKey(index, field)) ?? capacitySpelling(numberOf(model, field))
+
+  /** The reasoning levels of one row, or the empty list when unset. */
+  const reasoningOf = (model: ModelDraft): string[] => stringListOf(model, 'reasoning') ?? []
+
+  /** Toggle one input modality of a row; turning the last one off drops the field. */
+  const toggleModality = (index: number, modality: string): void => {
+    const model = models[index]
+    if (model === undefined) return
+    const current = stringListOf(model, 'inputModalities') ?? []
+    const next = current.includes(modality)
+      ? current.filter(entry => entry !== modality)
+      : [...current, modality]
+    patch(index, { inputModalities: next.length === 0 ? undefined : next })
+  }
+
+  /** Commit one row's pending reasoning tag; empty and duplicate drafts are dropped. */
+  const commitTag = (index: number): void => {
+    const model = models[index]
+    const draft = (tagDraft.get(index) ?? '').trim()
+    setTagDraft((current) => {
+      const next = new Map(current)
+      next.delete(index)
+      return next
+    })
+    if (model === undefined || draft === '' || reasoningOf(model).includes(draft)) return
+    patch(index, { reasoning: [...reasoningOf(model), draft] })
+  }
+
+  /** Remove one reasoning tag; removing the last one drops the field. */
+  const removeTag = (index: number, tag: string): void => {
+    const model = models[index]
+    if (model === undefined) return
+    const current = reasoningOf(model).filter(entry => entry !== tag)
+    patch(index, { reasoning: current.length === 0 ? undefined : current })
+  }
 
   /** Drop one row's entries and shift the rows after it down, in one pass. */
   const reindexOnRemove = (
@@ -200,6 +255,16 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     return next
   }
 
+  /** Shift a per-row map down after a removal; rows after the removed one move. */
+  const reindexRowMap = <T,>(current: ReadonlyMap<number, T>, index: number): Map<number, T> => {
+    const next = new Map<number, T>()
+    for (const [at, value] of current) {
+      if (at === index) continue
+      next.set(at > index ? at - 1 : at, value)
+    }
+    return next
+  }
+
   const toggleExpanded = (index: number): void => {
     setExpanded((current) => {
       const next = new Set(current)
@@ -208,7 +273,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     })
   }
 
-  const patch = (index: number, next: Record<string, string | number | undefined>): void => {
+  const patch = (index: number, next: Record<string, string | number | string[] | undefined>): void => {
     onChange(models.map((model, at) => {
       if (at !== index) return model
       // Rebuilt rather than spread over: an emptied optional field has to leave
@@ -388,6 +453,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   return next
                 })
                 setEditing(current => reindexOnRemove(current, index))
+                setTagDraft(current => reindexRowMap(current, index))
               }}
             >
               <IconTrash />
@@ -421,6 +487,67 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     disabled={disabled}
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
                   />
+                </label>
+                <label className={styles['modelField']}>
+                  <span className={styles['modelFieldLabel']}>{t('inputModalities')}</span>
+                  <div className={styles['chipGroup']}>
+                    {modalityChoices(model).map((modality) => {
+                      const active = (stringListOf(model, 'inputModalities') ?? []).includes(modality)
+                      return (
+                        <button
+                          key={modality}
+                          type="button"
+                          className={`${styles['chip']}${active ? ` ${styles['chipActive']}` : ''}`}
+                          aria-pressed={active}
+                          aria-label={`${t('inputModalities')} ${modality}`}
+                          disabled={disabled}
+                          onClick={() => { toggleModality(index, modality) }}
+                        >
+                          {modality}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </label>
+                <label className={styles['modelField']}>
+                  <span className={styles['modelFieldLabel']}>{t('reasoning')}</span>
+                  <div className={styles['tagGroup']}>
+                    {reasoningOf(model).map(tag => (
+                      <span key={tag} className={styles['tag']}>
+                        {tag}
+                        <button
+                          type="button"
+                          className={styles['tagRemove']}
+                          aria-label={`${t('removeReasoningLevel')} ${tag}`}
+                          disabled={disabled}
+                          onClick={() => { removeTag(index, tag) }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      className={styles['tagInput']}
+                      type="text"
+                      value={tagDraft.get(index) ?? ''}
+                      placeholder={t('reasoningPlaceholder')}
+                      aria-label={`${t('reasoning')} ${index + 1}`}
+                      disabled={disabled}
+                      onChange={(event) => { setTagDraft(current => new Map(current).set(index, event.target.value)) }}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ',') return
+                        event.preventDefault()
+                        commitTag(index)
+                      }}
+                      onBlur={() => {
+                        setTagDraft((current) => {
+                          const next = new Map(current)
+                          next.delete(index)
+                          return next
+                        })
+                      }}
+                    />
+                  </div>
                 </label>
               </div>
             )
