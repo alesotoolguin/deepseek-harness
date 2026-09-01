@@ -1,6 +1,7 @@
 # Agent Note: DeepSeek balance viewer as a static two-package feature
 
 Status: implemented
+Archived: 2026-08-31
 
 English | [中文](2026-08-27-deepseek-balance-static-plugin.zh.md)
 

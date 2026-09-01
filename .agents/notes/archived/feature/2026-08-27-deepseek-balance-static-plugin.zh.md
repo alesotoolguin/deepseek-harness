@@ -1,6 +1,7 @@
 # Agent Note: DeepSeek 余额查看器作为静态双包功能
 
 Status: implemented
+Archived: 2026-08-31
 
 [English](2026-08-27-deepseek-balance-static-plugin.md) | 中文
 
