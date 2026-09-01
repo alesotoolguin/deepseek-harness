@@ -41,6 +41,32 @@ const PiAiConfig = Schema.object({
   })),
 })
 
+/** The opencode-go-direct section shape as its adapter serializes it. */
+const OpencodeGoConfig = Schema.object({
+  apiKeyEnv: Schema.string().role('credential-ref').default('OPENCODE_API_KEY'),
+  baseURL: Schema.string(),
+  reasoningEffort: Schema.string(),
+  maxTokens: Schema.number(),
+  defaultContextWindow: Schema.number(),
+  models: Schema.array(Schema.object({
+    id: Schema.string().required(),
+    name: Schema.string(),
+    contextWindow: Schema.number(),
+    maxTokens: Schema.number(),
+    inputModalities: Schema.array(Schema.union(['text', 'image'])),
+    reasoning: Schema.array(Schema.string()),
+  })).default([
+    {
+      id: 'deepseek-v4-flash',
+      name: 'DeepSeek V4 Flash',
+      contextWindow: 1_000_000,
+      maxTokens: 256_000,
+      inputModalities: ['text'],
+      reasoning: ['off', 'low', 'high', 'max'],
+    },
+  ]),
+})
+
 function ok<T>(value: T) {
   return { ok: true as const, value }
 }
@@ -92,6 +118,24 @@ function piAiNamespace(
   }
 }
 
+/** The whole-section opencode-go-direct namespace, addressed at `settingsPath: []`. */
+function opencodeGoNamespace(
+  value: Record<string, JsonValue>,
+  user: Record<string, JsonValue> = value,
+  base: Record<string, JsonValue> = {},
+): SettingsNamespaceView {
+  return {
+    ns: 'opencode-go-direct',
+    schema: JSON.parse(JSON.stringify(OpencodeGoConfig.toJSON())) as JsonValue,
+    value,
+    base,
+    user,
+    applies: 'live',
+    secrets: [],
+    revision: 4,
+  }
+}
+
 function scriptedFace(options: {
   providers?: Record<string, JsonValue>
   /** User layer, when it differs from the effective section. */
@@ -100,6 +144,14 @@ function scriptedFace(options: {
   baseProviders?: Record<string, JsonValue>
   /** Routes the adapter reports as hand-declared; the rest come back as shipped. */
   declaredRoutes?: readonly string[]
+  /** References the credential seam reports as stored. */
+  configuredRefs?: readonly string[]
+  /** Whole-section opencode-go-direct profile; adds its row and namespace. */
+  opencodeGoProfile?: Record<string, JsonValue>
+  /** User layer of the opencode-go section, when it differs from the effective one. */
+  opencodeGoUser?: Record<string, JsonValue>
+  /** Composition layer of the opencode-go section. */
+  opencodeGoBase?: Record<string, JsonValue>
   discover?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
@@ -108,32 +160,51 @@ function scriptedFace(options: {
     openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy.example/v1' },
   }
   const namespace = piAiNamespace(providers, options.userProviders ?? providers, options.baseProviders ?? {})
+  const namespaces = [namespace]
+  const registeredProviders = Object.keys(providers)
+  const configurable = Object.keys(providers).map(provider => ({
+    provider,
+    displayName: provider,
+    settingsNs: 'llm-pi-ai',
+    settingsPath: ['providers', provider],
+    declared: options.declaredRoutes?.includes(provider) ?? false,
+  }))
+  if (options.opencodeGoProfile !== undefined) {
+    namespaces.push(opencodeGoNamespace(
+      options.opencodeGoProfile,
+      options.opencodeGoUser ?? options.opencodeGoProfile,
+      options.opencodeGoBase ?? {},
+    ))
+    registeredProviders.push('opencode-go-direct')
+    configurable.push({
+      provider: 'opencode-go-direct',
+      displayName: 'opencode-go-direct',
+      settingsNs: 'opencode-go-direct',
+      settingsPath: [],
+      declared: false,
+    })
+  }
   const discover = options.discover ?? vi.fn(() => Promise.resolve(ok([])))
-  const mutate = options.mutate ?? vi.fn(() => Promise.resolve(remoteOk(namespace)))
+  const mutate = options.mutate ?? vi.fn(() => Promise.resolve(remoteOk(namespaces[0] as SettingsNamespaceView)))
   const set = options.set ?? vi.fn(() => Promise.resolve(remoteOk(undefined)))
   const face = {
     llm: {
       listProviders: vi.fn(() => Promise.resolve(ok(
-        Object.keys(providers).map(provider => ({ id: provider, name: provider })),
+        registeredProviders.map(provider => ({ id: provider, name: provider })),
       ))),
-      listConfigurableProviders: vi.fn(() => Promise.resolve(ok(
-        Object.keys(providers).map(provider => ({
-          provider,
-          displayName: provider,
-          settingsNs: 'llm-pi-ai',
-          settingsPath: ['providers', provider],
-          declared: options.declaredRoutes?.includes(provider) ?? false,
-        })),
-      ))),
+      listConfigurableProviders: vi.fn(() => Promise.resolve(ok(configurable))),
       discoverModels: discover,
     },
     settings: {
-      describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true, namespaces: [namespace] }))),
+      describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true, namespaces }))),
       mutate,
     },
     credentials: {
       describe: vi.fn((refs: string[]) => Promise.resolve(remoteOk(
-        Object.fromEntries(refs.map(ref => [ref, { configured: false, writable: true }])),
+        Object.fromEntries(refs.map(ref => [ref, {
+          configured: options.configuredRefs?.includes(ref) ?? false,
+          writable: true,
+        }])),
       ))),
       set,
       unset: vi.fn(),
@@ -727,6 +798,74 @@ describe('provider rows', () => {
     // Absent is "unknown", never "shipped": an adapter that answers nothing
     // must not have its routes labelled either way.
     expect(screen.queryByText(en.customTag)).toBeNull()
+  })
+})
+
+describe('opencode-go-direct provider card', () => {
+  /** The whole-section profile as the effective section carries it. */
+  const PROFILE = {
+    apiKeyEnv: 'OPENCODE_API_KEY',
+    baseURL: 'https://opencode.ai/zen/go/v1',
+    reasoningEffort: 'high',
+    maxTokens: 256_000,
+    defaultContextWindow: 1_000_000,
+    models: [
+      { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', contextWindow: 1_000_000, reasoning: ['off', 'low', 'high', 'max'] },
+    ],
+  }
+
+  it('renders the credential and curated fields instead of the settings.yaml hint', async () => {
+    // The pi-ai row stays usable so the whole-section opencode-go route
+    // renders as an ordinary row rather than the first-run setup card.
+    await mountSection({ opencodeGoProfile: PROFILE, configuredRefs: ['OPENAI_API_KEY'] })
+    openEditor('opencode-go-direct')
+
+    expect(screen.queryByText(content => content.includes(en.advancedHint))).toBeNull()
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+    expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).placeholder).toBe('https://opencode.ai/zen/go/v1')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('deepseek-v4-flash')
+    expect(buttonNamed(en.apply).disabled).toBe(false)
+  })
+
+  it('stores a typed key under the effective reference without rewriting the section', async () => {
+    const { mutate, set } = await mountSection({ opencodeGoProfile: PROFILE, configuredRefs: ['OPENAI_API_KEY'] })
+    openEditor('opencode-go-direct')
+
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-opencode' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(set).toHaveBeenCalled() })
+    // The profile names the reference explicitly, so the managed credential
+    // must land there; the section itself is untouched.
+    expect(set).toHaveBeenCalledWith('OPENCODE_API_KEY', 'sk-opencode')
+    expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('keeps the per-model reasoning vocabulary when the catalog is edited', async () => {
+    const { mutate } = await mountSection({
+      opencodeGoProfile: PROFILE,
+      opencodeGoUser: {},
+      opencodeGoBase: { models: PROFILE.models },
+      configuredRefs: ['OPENAI_API_KEY'],
+    })
+    openEditor('opencode-go-direct')
+
+    expandModel(1)
+    fireEvent.change(screen.getByLabelText(`${en.modelMaxTokens} 1`), { target: { value: '64K' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    // The capacity edit rides on the catalog the composition owns, and the
+    // hidden `reasoning` vocabulary survives the rewrite.
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      {
+        id: 'deepseek-v4-flash',
+        name: 'DeepSeek V4 Flash',
+        contextWindow: 1_000_000,
+        reasoning: ['off', 'low', 'high', 'max'],
+        maxTokens: 64_000,
+      },
+    ])
   })
 })
 
