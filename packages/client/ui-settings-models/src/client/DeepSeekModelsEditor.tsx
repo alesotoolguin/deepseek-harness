@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
 import {
   IconChevronDownOutline14, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ModalityChips, ReasoningTags, reasoningOf, stringListOf } from './ModelAdvancedFields.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -17,7 +18,7 @@ import styles from './ModelsSection.module.css'
 export type DeepSeekModelDraft = Record<string, unknown>
 
 /** The catalog fields this editor writes. */
-type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens'
+type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens' | 'inputModalities' | 'reasoning'
 
 /** The two token counts edited as K/M-suffixed text behind a row's disclosure. */
 type CapacityField = 'contextWindow' | 'maxTokens'
@@ -162,6 +163,9 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
   // because the rows they annotated are gone.
   const [editing, setEditing] = useState<ReadonlyMap<string, string>>(() => new Map())
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set())
+  // Reasoning levels are edited as free tags; one row's pending text is held
+  // here so keystrokes survive re-renders, and dropped on commit or blur.
+  const [tagDraft, setTagDraft] = useState<ReadonlyMap<number, string>>(() => new Map())
 
   const update = (index: number, key: CatalogField, value: unknown): void => {
     const next = props.models.map((model, at) => {
@@ -193,12 +197,21 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
       }
       return next
     })
+    setTagDraft((current) => {
+      const next = new Map<number, string>()
+      for (const [at, text] of current) {
+        if (at === index) continue
+        next.set(at > index ? at - 1 : at, text)
+      }
+      return next
+    })
     props.onChange(props.models.filter((_model, at) => at !== index).map(model => ({ ...model })))
   }
 
   const reset = (): void => {
     setEditing(new Map())
     setExpanded(new Set())
+    setTagDraft(new Map())
     props.onReset()
   }
 
@@ -231,6 +244,27 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
       next.delete(key)
       return next
     })
+  }
+
+  /** Commit one row's pending reasoning tag; empty and duplicate drafts are dropped. */
+  const commitTag = (index: number): void => {
+    const model = props.models[index]
+    const draft = (tagDraft.get(index) ?? '').trim()
+    setTagDraft((current) => {
+      const next = new Map(current)
+      next.delete(index)
+      return next
+    })
+    if (model === undefined || draft === '' || reasoningOf(model).includes(draft)) return
+    update(index, 'reasoning', [...reasoningOf(model), draft])
+  }
+
+  /** Remove one reasoning tag; removing the last one drops the field. */
+  const removeTag = (index: number, tag: string): void => {
+    const model = props.models[index]
+    if (model === undefined) return
+    const current = reasoningOf(model).filter(entry => entry !== tag)
+    update(index, 'reasoning', current.length === 0 ? undefined : current)
   }
 
   /** One capacity field of one row, rendered inside the row's disclosure. */
@@ -343,6 +377,28 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                     <div className={styles['modelAdvanced']}>
                       {capacityField(model, index, 'contextWindow', props.defaultContextWindow)}
                       {capacityField(model, index, 'maxTokens', props.defaultMaxTokens)}
+                      <label className={styles['modelField']}>
+                        <span className={styles['modelFieldLabel']}>{props.t('inputModalities')}</span>
+                        <ModalityChips
+                          value={stringListOf(model, 'inputModalities')}
+                          t={props.t}
+                          disabled={props.disabled}
+                          onChange={(next) => { update(index, 'inputModalities', next) }}
+                        />
+                      </label>
+                      <label className={styles['modelField']}>
+                        <span className={styles['modelFieldLabel']}>{props.t('reasoning')}</span>
+                        <ReasoningTags
+                          value={stringListOf(model, 'reasoning')}
+                          draft={tagDraft.get(index) ?? ''}
+                          onDraftChange={(text) => { setTagDraft(current => new Map(current).set(index, text)) }}
+                          t={props.t}
+                          disabled={props.disabled}
+                          onCommit={() => { commitTag(index) }}
+                          onRemove={(tag) => { removeTag(index, tag) }}
+                          label={`${props.t('reasoning')} ${String(index + 1)}`}
+                        />
+                      </label>
                     </div>
                   )
                   : null}

@@ -19,6 +19,7 @@ import type { ReactNode } from 'react'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
+import { ModalityChips, ReasoningTags, reasoningOf, stringListOf } from './ModelAdvancedFields.tsx'
 import type { ModelsOperations } from './operations.ts'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import type { en } from './locales.ts'
@@ -40,23 +41,6 @@ function textOf(model: ModelDraft, key: string): string {
 function numberOf(model: ModelDraft, key: string): number | undefined {
   const value = model[key]
   return typeof value === 'number' ? value : undefined
-}
-
-/** A row's string-array field, or `undefined` when unset or not an array of strings. */
-function stringListOf(model: ModelDraft, key: string): string[] | undefined {
-  const value = model[key]
-  return Array.isArray(value) && value.every(entry => typeof entry === 'string')
-    ? value
-    : undefined
-}
-
-/** The harness's merge-extensible modality vocabulary; a model's own values join as extra chips. */
-const MODALITY_CHOICES: readonly string[] = ['text', 'image']
-
-/** Chips offered for one row: the known vocabulary plus any stored values outside it. */
-function modalityChoices(model: ModelDraft): string[] {
-  const present = stringListOf(model, 'inputModalities') ?? []
-  return [...MODALITY_CHOICES, ...present.filter(entry => !MODALITY_CHOICES.includes(entry))]
 }
 
 /** What an interrogation needs, taken from the live form. */
@@ -206,18 +190,8 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     editing.get(bufferKey(index, field)) ?? capacitySpelling(numberOf(model, field))
 
   /** The reasoning levels of one row, or the empty list when unset. */
-  const reasoningOf = (model: ModelDraft): string[] => stringListOf(model, 'reasoning') ?? []
 
   /** Toggle one input modality of a row; turning the last one off drops the field. */
-  const toggleModality = (index: number, modality: string): void => {
-    const model = models[index]
-    if (model === undefined) return
-    const current = stringListOf(model, 'inputModalities') ?? []
-    const next = current.includes(modality)
-      ? current.filter(entry => entry !== modality)
-      : [...current, modality]
-    patch(index, { inputModalities: next.length === 0 ? undefined : next })
-  }
 
   /** Commit one row's pending reasoning tag; empty and duplicate drafts are dropped. */
   const commitTag = (index: number): void => {
@@ -490,64 +464,25 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 </label>
                 <label className={styles['modelField']}>
                   <span className={styles['modelFieldLabel']}>{t('inputModalities')}</span>
-                  <div className={styles['chipGroup']}>
-                    {modalityChoices(model).map((modality) => {
-                      const active = (stringListOf(model, 'inputModalities') ?? []).includes(modality)
-                      return (
-                        <button
-                          key={modality}
-                          type="button"
-                          className={`${styles['chip']}${active ? ` ${styles['chipActive']}` : ''}`}
-                          aria-pressed={active}
-                          aria-label={`${t('inputModalities')} ${modality}`}
-                          disabled={disabled}
-                          onClick={() => { toggleModality(index, modality) }}
-                        >
-                          {modality}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  <ModalityChips
+                    value={stringListOf(model, 'inputModalities')}
+                    t={t}
+                    disabled={disabled}
+                    onChange={(next) => { patch(index, { inputModalities: next }) }}
+                  />
                 </label>
                 <label className={styles['modelField']}>
                   <span className={styles['modelFieldLabel']}>{t('reasoning')}</span>
-                  <div className={styles['tagGroup']}>
-                    {reasoningOf(model).map(tag => (
-                      <span key={tag} className={styles['tag']}>
-                        {tag}
-                        <button
-                          type="button"
-                          className={styles['tagRemove']}
-                          aria-label={`${t('removeReasoningLevel')} ${tag}`}
-                          disabled={disabled}
-                          onClick={() => { removeTag(index, tag) }}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                    <input
-                      className={styles['tagInput']}
-                      type="text"
-                      value={tagDraft.get(index) ?? ''}
-                      placeholder={t('reasoningPlaceholder')}
-                      aria-label={`${t('reasoning')} ${index + 1}`}
-                      disabled={disabled}
-                      onChange={(event) => { setTagDraft(current => new Map(current).set(index, event.target.value)) }}
-                      onKeyDown={(event) => {
-                        if (event.key !== 'Enter' && event.key !== ',') return
-                        event.preventDefault()
-                        commitTag(index)
-                      }}
-                      onBlur={() => {
-                        setTagDraft((current) => {
-                          const next = new Map(current)
-                          next.delete(index)
-                          return next
-                        })
-                      }}
-                    />
-                  </div>
+                  <ReasoningTags
+                    value={stringListOf(model, 'reasoning')}
+                    draft={tagDraft.get(index) ?? ''}
+                    onDraftChange={(text) => { setTagDraft(current => new Map(current).set(index, text)) }}
+                    t={t}
+                    disabled={disabled}
+                    onCommit={() => { commitTag(index) }}
+                    onRemove={(tag) => { removeTag(index, tag) }}
+                    label={`${t('reasoning')} ${index + 1}`}
+                  />
                 </label>
               </div>
             )

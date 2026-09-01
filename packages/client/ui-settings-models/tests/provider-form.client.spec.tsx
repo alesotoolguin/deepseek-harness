@@ -909,6 +909,60 @@ describe('opencode-go-direct provider card', () => {
       },
     ])
   })
+
+  it('edits per-model modalities and reasoning levels from the expanded row', async () => {
+    const { mutate } = await mountSection({
+      opencodeGoProfile: PROFILE,
+      opencodeGoUser: {},
+      opencodeGoBase: { models: PROFILE.models },
+      configuredRefs: ['OPENAI_API_KEY'],
+    })
+    openEditor('opencode-go-direct')
+    expandModel(1)
+
+    // Modality chips start unset; toggling text then image stores both.
+    fireEvent.click(screen.getByRole('button', { name: `${en.inputModalities} text` }))
+    fireEvent.click(screen.getByRole('button', { name: `${en.inputModalities} image` }))
+    // A fresh reasoning level joins the model's own vocabulary.
+    const reasoningInput = screen.getByLabelText(`${en.reasoning} 1`)
+    fireEvent.change(reasoningInput, { target: { value: 'medium' } })
+    fireEvent.keyDown(reasoningInput, { key: 'Enter' })
+
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      {
+        id: 'deepseek-v4-flash',
+        name: 'DeepSeek V4 Flash',
+        contextWindow: 1_000_000,
+        inputModalities: ['text', 'image'],
+        reasoning: ['off', 'low', 'high', 'max', 'medium'],
+      },
+    ])
+  })
+
+  it('drops the reasoning field when the last level is removed', async () => {
+    const { mutate } = await mountSection({
+      opencodeGoProfile: PROFILE,
+      opencodeGoUser: {},
+      opencodeGoBase: { models: PROFILE.models },
+      configuredRefs: ['OPENAI_API_KEY'],
+    })
+    openEditor('opencode-go-direct')
+    expandModel(1)
+
+    for (const level of ['off', 'low', 'high', 'max']) {
+      fireEvent.click(screen.getByRole('button', { name: `${en.removeReasoningLevel} ${level}` }))
+    }
+
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    // An emptied optional field leaves the profile rather than storing a list
+    // the adapter would read as "no reasoning".
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', contextWindow: 1_000_000 },
+    ])
+  })
 })
 
 describe('hand-declared providers', () => {
